@@ -37,3 +37,29 @@ pre {
   background: #ffffff;
   white-space: pre-wrap;
 }
+
+.gfmd-editor-surface h1,
+.gfmd-editor-surface h2 {
+  margin: 0 0 12px;
+  line-height: 1.25;
+}
+
+.gfmd-editor-surface blockquote {
+  margin: 12px 0;
+  padding-left: 12px;
+  border-left: 4px solid #d1d9e0;
+  color: #59636e;
+}
+
+.gfmd-editor-surface pre {
+  padding: 12px;
+  background: #f6f8fa;
+}
+
+.gfmd-editor-surface li[data-checked="true"]::marker {
+  content: "[x] ";
+}
+
+.gfmd-editor-surface li[data-checked="false"]::marker {
+  content: "[ ] ";
+}

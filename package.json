@@ -42,10 +42,17 @@
     "react-reconciler": ">=0.26.1 <=0.33.0"
   },
   "dependencies": {
+    "@handlewithcare/remark-prosemirror": "^0.1.5",
     "prosemirror-commands": "^1.7.1",
     "prosemirror-history": "^1.4.1",
     "prosemirror-inputrules": "^1.5.0",
-    "prosemirror-keymap": "^1.2.3"
+    "prosemirror-keymap": "^1.2.3",
+    "prosemirror-schema-basic": "^1.2.4",
+    "prosemirror-schema-list": "^1.5.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
+    "unified": "^11.0.5"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.0",

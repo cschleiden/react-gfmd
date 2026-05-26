@@ -10,10 +10,48 @@ import {
 } from "../src";
 import "./styles.css";
 
-const initialMarkdown = `> [!NOTE]
-> This editor supports alerts, #42, owner/repo#123, GH-9, and @monalisa as rich nodes.
+const initialMarkdown = `# React GFMD demo
 
-Try typing #42 or @monalisa followed by a space.`;
+This editor round-trips common Markdown and GitHub-flavored Markdown while rendering #42, owner/repo#123, GH-9, and @monalisa as rich nodes.
+
+## Inline formatting
+
+Use **strong**, *emphasis*, ~~strikethrough~~, \`inline code\`, [links](https://github.com), bare URLs like https://github.com, and footnote references[^1].
+
+## Lists and tasks
+
+- Plain bullet item with #42
+- [x] Completed task assigned to @monalisa
+- [ ] Open task that mentions GH-9
+
+1. Ordered item
+2. Ordered item with owner/repo#123
+
+## Quotes and alerts
+
+> Blockquotes preserve nested inline features like **bold** text and @octocat.
+
+> [!NOTE]
+> GitHub alerts can include rich references like #42 and mentions like @monalisa.
+>
+> - Alerts can also contain nested Markdown.
+> - Try editing this list and watch the Markdown output update.
+
+> [!WARNING]
+> Tables are intentionally not in this seed document yet because table nodes are not mapped to the ProseMirror schema.
+
+## Code and rules
+
+\`\`\`ts
+const issue = "#42";
+console.log(\`Resolved \${issue}\`);
+\`\`\`
+
+---
+
+Try typing #42 or @monalisa followed by a space.
+
+[^1]: Footnotes are parsed through remark-gfm and serialized back to Markdown.`;
 
 const references = new Map<number, GitHubReference>([
   [
@@ -87,7 +125,7 @@ function App() {
     <main>
       <header>
         <h1>React GFMD</h1>
-        <p>Alerts, GitHub references, and mentions as rich editable Markdown.</p>
+        <p>Common Markdown, GFM features, GitHub alerts, references, and mentions as rich editable Markdown.</p>
       </header>
       <GFMarkdownEditor
         context={{ owner: "cschleiden", repo: "react-gfmd" }}
