@@ -1,0 +1,173 @@
+:root {
+  --gfmd-fg: #1f2328;
+  --gfmd-muted-fg: #59636e;
+  --gfmd-border: #d1d9e0;
+  --gfmd-canvas: #ffffff;
+  --gfmd-subtle: #f6f8fa;
+  --gfmd-accent: #0969da;
+  --gfmd-success: #1a7f37;
+  --gfmd-danger: #cf222e;
+  --gfmd-warning: #9a6700;
+  --gfmd-done: #8250df;
+  --gfmd-radius: 6px;
+  color-scheme: light;
+}
+
+.gfmd-editor {
+  border: 1px solid var(--gfmd-border);
+  border-radius: var(--gfmd-radius);
+  background: var(--gfmd-canvas);
+  color: var(--gfmd-fg);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.gfmd-editor-surface {
+  min-height: 220px;
+  padding: 16px;
+  outline: none;
+  white-space: pre-wrap;
+}
+
+.gfmd-editor-surface p {
+  margin: 0 0 12px;
+  min-height: 1.5em;
+}
+
+.gfmd-alert {
+  margin: 12px 0;
+  padding: 8px 12px;
+  border-left: 4px solid var(--gfmd-accent);
+  background: color-mix(in srgb, var(--gfmd-accent) 6%, transparent);
+}
+
+.gfmd-alert-note {
+  border-left-color: var(--gfmd-accent);
+}
+
+.gfmd-alert-tip {
+  border-left-color: var(--gfmd-success);
+}
+
+.gfmd-alert-important {
+  border-left-color: var(--gfmd-done);
+}
+
+.gfmd-alert-warning {
+  border-left-color: var(--gfmd-warning);
+}
+
+.gfmd-alert-caution {
+  border-left-color: var(--gfmd-danger);
+}
+
+.gfmd-alert-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.gfmd-alert-kind {
+  width: auto;
+  min-width: 0;
+  padding: 0 20px 0 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.gfmd-alert-body > :last-child {
+  margin-bottom: 0;
+}
+
+.gfmd-reference,
+.gfmd-mention {
+  display: inline;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 1.25em;
+  padding: 0 5px;
+  border: 1px solid var(--gfmd-border);
+  border-radius: 999px;
+  background: var(--gfmd-subtle);
+  color: var(--gfmd-accent);
+  font: inherit;
+  line-height: inherit;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
+.gfmd-reference-label + .gfmd-reference-title {
+  margin-left: 4px;
+}
+
+.gfmd-reference[data-state="closed"],
+.gfmd-reference[data-state="merged"] {
+  color: var(--gfmd-done);
+}
+
+.gfmd-reference[data-state="error"],
+.gfmd-reference[data-state="missing"] {
+  color: var(--gfmd-muted-fg);
+}
+
+.gfmd-reference-title {
+  overflow: hidden;
+  max-width: 22ch;
+  color: var(--gfmd-muted-fg);
+  text-overflow: ellipsis;
+}
+
+.gfmd-mention-avatar {
+  width: 1em;
+  height: 1em;
+  margin-right: 4px;
+  border-radius: 50%;
+  vertical-align: -0.125em;
+}
+
+.gfmd-suggestions {
+  position: fixed;
+  z-index: 1000;
+  min-width: 220px;
+  max-width: 360px;
+  padding: 6px;
+  border: 1px solid var(--gfmd-border);
+  border-radius: var(--gfmd-radius);
+  background: var(--gfmd-canvas);
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+  color: var(--gfmd-fg);
+  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.gfmd-suggestions[hidden] {
+  display: none;
+}
+
+.gfmd-suggestions button {
+  display: grid;
+  width: 100%;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.gfmd-suggestions button.is-active,
+.gfmd-suggestions button:hover {
+  background: var(--gfmd-subtle);
+}
+
+.gfmd-suggestions small {
+  overflow: hidden;
+  color: var(--gfmd-muted-fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
