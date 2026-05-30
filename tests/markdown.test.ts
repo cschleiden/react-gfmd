@@ -10,41 +10,54 @@ describe("markdown", () => {
     expect(serializeMarkdown(doc)).toBe("");
   });
 
-  it("round-trips alerts", () => {
-    const markdown = `> [!WARNING]
-> Be careful with #123.
->
-> Ping @monalisa.`;
-
-    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
-  });
-
-  it("parses bare, GH, cross-repo references and mentions", () => {
-    const doc = parseMarkdown("Refs #1, GH-2, owner/repo#3, and @monalisa.");
+  it("keeps issue-like references as plain text", () => {
+    const doc = parseMarkdown("Refs #1, GH-2, and owner/repo#3.");
     const paragraph = doc.firstChild!;
     const nodes: string[] = [];
     paragraph.forEach((node) => nodes.push(node.type.name));
 
-    expect(nodes).toEqual([
-      "text",
-      "reference",
-      "text",
-      "reference",
-      "text",
-      "reference",
-      "text",
-      "mention",
-      "text",
-    ]);
-    expect(serializeMarkdown(doc)).toBe("Refs #1, GH-2, owner/repo#3, and @monalisa.");
+    expect(nodes).toEqual(["text"]);
+    expect(serializeMarkdown(doc)).toBe("Refs #1, GH-2, and owner/repo#3.");
   });
 
   it("does not escape leading issue references", () => {
-    expect(serializeMarkdown(parseMarkdown("#42 starts a paragraph."))).toBe("#42 starts a paragraph.");
+    expect(serializeMarkdown(parseMarkdown("#42 starts a paragraph."))).toBe(
+      "#42 starts a paragraph.",
+    );
   });
 
   it("round-trips common inline markdown", () => {
     const markdown = "**bold** *italic* `code` [link](https://example.com)";
+
+    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
+  });
+
+  it("round-trips images", () => {
+    const markdown = "![Alt text](https://example.com/image.png \"Title\")";
+
+    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
+  });
+
+  it("parses reference-style images", () => {
+    const markdown = `![Alt text][img]
+
+[img]: https://example.com/image.png "Title"`;
+
+    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(
+      "![Alt text](https://example.com/image.png \"Title\")",
+    );
+  });
+
+  it("parses raw HTML image tags", () => {
+    const markdown = `<img src="https://example.com/image.png" alt="Alt text" title="Title">`;
+
+    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(
+      "![Alt text](https://example.com/image.png \"Title\")",
+    );
+  });
+
+  it("round-trips subscript and superscript", () => {
+    const markdown = "H<sub>2</sub>O and x<sup>2</sup>";
 
     expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
   });
@@ -76,20 +89,56 @@ const value = 1;
     expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
   });
 
-  it("parses supported markdown inside alerts", () => {
-    const markdown = `> [!TIP]
-> Use **bold** text.
+  it("round-trips nested blockquotes", () => {
+    const markdown = `> Outer
 >
-> - item`;
+> > Inner
+> >
+> > Deep`;
 
     expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
   });
 
-  it("fails explicitly for unsupported GFM tables", () => {
+  it("supports mixed list style transitions", () => {
+    const markdown = `1. foo
+* bar
+2. gr`;
+
+    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(`1. foo
+
+- bar
+
+2. gr`);
+  });
+
+  it("keeps adjacent GFM bullet and ordered lists separate", () => {
+    const markdown = `* a
+* b
+1. c
+2. d`;
+
+    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(`- a
+- b
+
+1. c
+2. d`);
+  });
+
+  it("round-trips GFM tables", () => {
     const markdown = `| A | B |
 | - | - |
 | 1 | 2 |`;
 
-    expect(() => parseMarkdown(markdown)).toThrow(/GFM tables/);
+    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
+  });
+
+  it("round-trips GFM table alignment and inline formatting", () => {
+    const markdown = `| Left | Center | Right |
+| :--- | :----: | ----: |
+| **A** | \`B\` | [C](https://example.com) |`;
+
+    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(`| Left  | Center |                    Right |
+| :---- | :----: | -----------------------: |
+| **A** |   \`B\`  | [C](https://example.com) |`);
   });
 });

@@ -1,56 +1,61 @@
-import type { NodeSpec } from "prosemirror-model";
-import { Schema } from "prosemirror-model";
+import { type NodeSpec, Schema } from "prosemirror-model";
 import { schema as basicSchema } from "prosemirror-schema-basic";
-import { addListNodes } from "prosemirror-schema-list";
-import { alertNodeSpec } from "./features/alerts";
-import { mentionNodeSpec } from "./features/mentions";
-import { referenceNodeSpec } from "./features/references";
+import { tableNodes } from "prosemirror-tables";
+import {
+  bulletListNodeSpec,
+  listItemNodeSpec,
+  orderedListNodeSpec,
+  taskListItemNodeSpec,
+} from "./lists/schema";
 
-const listNodes = addListNodes(basicSchema.spec.nodes.remove("image"), "paragraph block*", "block");
-const bulletListSpec = listNodes.get("bullet_list")!;
-const orderedListSpec = listNodes.get("ordered_list")!;
+const baseNodes = basicSchema.spec.nodes;
+const tableNodeSpecs = tableNodes({
+  tableGroup: "block",
+  cellContent: "paragraph",
+  cellAttributes: {
+    align: {
+      default: null,
+      getFromDOM: (dom) =>
+        dom.style.textAlign || dom.getAttribute("align") || null,
+      setDOMAttr: (value, attrs) => {
+        if (typeof value === "string" && value) {
+          attrs.style = `text-align: ${value}`;
+        }
+      },
+    },
+  },
+});
 
 export const gfmSchema = new Schema({
-  nodes: listNodes
-    .update("bullet_list", withAttrs(bulletListSpec, { tight: { default: true } }))
-    .update(
-      "ordered_list",
-      withAttrs(orderedListSpec, { order: { default: 1 }, tight: { default: true } }),
-    )
-    .update("list_item", {
-      ...listNodes.get("list_item"),
-      attrs: {
-        checked: { default: null },
-        spread: { default: false },
-      },
-      parseDOM: [
-        {
-          tag: "li",
-          getAttrs: (node) => {
-            if (!(node instanceof HTMLElement)) return false;
-            const checked = node.getAttribute("data-checked");
-            return { checked: checked === null ? null : checked === "true" };
-          },
-        },
-      ],
-      toDOM: (node) => ["li", { "data-checked": node.attrs.checked }, 0],
+  nodes: baseNodes
+    .append({
+      ordered_list: orderedListNodeSpec,
+      bullet_list: bulletListNodeSpec,
+      list_item: listItemNodeSpec,
     })
     .update("code_block", {
-      ...listNodes.get("code_block"),
+      ...baseNodes.get("code_block"),
       attrs: {
         language: { default: null },
         meta: { default: null },
       },
       toDOM: (node) => [
         "pre",
-        ["code", { "data-language": node.attrs.language, "data-meta": node.attrs.meta }, 0],
+        [
+          "code",
+          {
+            "data-language": node.attrs.language,
+            "data-meta": node.attrs.meta,
+          },
+          0,
+        ],
       ],
     })
     .append({
-      alert: alertNodeSpec,
-      footnote_definition: blockContainerNode("section", "data-gfmd-footnote-definition"),
-      reference: referenceNodeSpec,
-      mention: mentionNodeSpec,
+      footnote_definition: blockContainerNode(
+        "section",
+        "data-gfmd-footnote-definition",
+      ),
       footnote_reference: {
         inline: true,
         group: "inline",
@@ -63,7 +68,8 @@ export const gfmSchema = new Schema({
         parseDOM: [
           {
             tag: "sup[data-gfmd-footnote-reference]",
-            getAttrs: (node) => nodeAttrs(node, "data-identifier", "data-label"),
+            getAttrs: (node) =>
+              nodeAttrs(node, "data-identifier", "data-label"),
           },
         ],
         toDOM: (node) => [
@@ -76,18 +82,26 @@ export const gfmSchema = new Schema({
           `[^${node.attrs.label ?? node.attrs.identifier}]`,
         ],
       },
-    }),
+      task_list_item: taskListItemNodeSpec,
+    })
+    .append(tableNodeSpecs),
   marks: basicSchema.spec.marks.append({
     strike: {
       parseDOM: [{ tag: "s" }, { tag: "del" }],
       toDOM: () => ["del", 0],
     },
+    subscript: {
+      excludes: "superscript",
+      parseDOM: [{ tag: "sub" }],
+      toDOM: () => ["sub", 0],
+    },
+    superscript: {
+      excludes: "subscript",
+      parseDOM: [{ tag: "sup" }],
+      toDOM: () => ["sup", 0],
+    },
   }),
 });
-
-function withAttrs(spec: NodeSpec, attrs: NodeSpec["attrs"]): NodeSpec {
-  return { ...spec, attrs: { ...spec.attrs, ...attrs } };
-}
 
 function blockContainerNode(tag: string, markerAttr: string): NodeSpec {
   return {
@@ -116,7 +130,11 @@ function blockContainerNode(tag: string, markerAttr: string): NodeSpec {
   };
 }
 
-function nodeAttrs(node: Node | string, identifierAttr: string, labelAttr: string) {
+function nodeAttrs(
+  node: Node | string,
+  identifierAttr: string,
+  labelAttr: string,
+) {
   if (!(node instanceof HTMLElement)) return false;
   return {
     identifier: node.getAttribute(identifierAttr),

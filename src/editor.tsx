@@ -1,26 +1,40 @@
-import { reactKeys } from "@handlewithcare/react-prosemirror";
+import {
+  ProseMirror,
+  ProseMirrorDoc,
+  reactKeys,
+  useEditorEffect,
+} from "@handlewithcare/react-prosemirror";
+import { inputRules } from "@handlewithcare/prosemirror-inputrules";
 import { baseKeymap, toggleMark } from "prosemirror-commands";
 import { history, redo, undo } from "prosemirror-history";
-import { inputRules, textblockTypeInputRule, wrappingInputRule } from "prosemirror-inputrules";
 import { keymap } from "prosemirror-keymap";
 import type { Node as ProseMirrorNode } from "prosemirror-model";
 import { DOMParser as ProseMirrorDOMParser } from "prosemirror-model";
-import { EditorState, type Plugin } from "prosemirror-state";
+import { EditorState, Plugin, type Transaction } from "prosemirror-state";
+import { tableEditing } from "prosemirror-tables";
 import type { EditorView } from "prosemirror-view";
-import { EditorView as ProseMirrorEditorView } from "prosemirror-view";
 import * as React from "react";
-import type { CreateGFMarkdownStateOptions, GFMarkdownEditorProps } from "./editor-types";
-import { AlertNodeView } from "./features/alerts";
-import { MentionNodeView } from "./features/mentions";
-import { ReferenceNodeView } from "./features/references";
+import type {
+  CreateGFMarkdownStateOptions,
+  GFMarkdownEditorProps,
+} from "./editor-types";
+import { CodeBlockNodeView } from "./features/code-block";
+import { createMarkdownInputRules } from "./input-rules";
+import { changeListIndent } from "./lists/commands";
+import { splitCurrentListItem } from "./lists/keymap";
+import { createTaskListPlugin } from "./lists/plugin";
 import { parseMarkdown, serializeMarkdown } from "./markdown";
-import { createSuggestionPlugin } from "./plugins/suggestions";
-import { createTokenConversionPlugin } from "./plugins/token-conversion";
 import { gfmSchema } from "./schema";
+import { GFMarkdownToolbar } from "./toolbar";
 
-export type { CreateGFMarkdownStateOptions, GFMarkdownEditorProps } from "./editor-types";
+export type {
+  CreateGFMarkdownStateOptions,
+  GFMarkdownEditorProps,
+} from "./editor-types";
 
-export function createGFMarkdownState(options: CreateGFMarkdownStateOptions): EditorState {
+export function createGFMarkdownState(
+  options: CreateGFMarkdownStateOptions,
+): EditorState {
   return EditorState.create({
     doc: parseMarkdown(options.value),
     schema: gfmSchema,
@@ -29,39 +43,75 @@ export function createGFMarkdownState(options: CreateGFMarkdownStateOptions): Ed
 }
 
 export function GFMarkdownEditor(props: GFMarkdownEditorProps) {
-  const hostRef = React.useRef<HTMLDivElement | null>(null);
-  const viewRef = React.useRef<EditorView | null>(null);
   const latestProps = React.useRef(props);
   latestProps.current = props;
+  const lastAppliedValueRef = React.useRef(props.value);
+
+  const [editorState, setEditorState] = React.useState<EditorState>(() =>
+    createGFMarkdownState(props),
+  );
+  const [editorView, setEditorView] = React.useState<EditorView | null>(null);
+  const nodeViews = React.useMemo(() => createNodeViews(latestProps), []);
 
   React.useEffect(() => {
-    if (!hostRef.current) return undefined;
+    if (props.value === lastAppliedValueRef.current) return;
+    lastAppliedValueRef.current = props.value;
+    setEditorState(createGFMarkdownState(latestProps.current));
+  }, [props.value]);
 
-    const state = createGFMarkdownState(props);
-    const view = new ProseMirrorEditorView(hostRef.current, {
-      state,
-      nodeViews: createNodeViews(latestProps),
-      dispatchTransaction(transaction) {
-        const nextState = view.state.apply(transaction);
-        view.updateState(nextState);
-        if (transaction.docChanged) {
-          latestProps.current.onChange?.(serializeMarkdown(nextState.doc), nextState.doc);
-        }
-      },
-      attributes: {
-        class: "gfmd-editor-surface",
-        "data-placeholder": props.placeholder ?? "",
-      },
+  const dispatchTransaction = React.useCallback((transaction: Transaction) => {
+    setEditorState((state) => {
+      const nextState = state.apply(transaction);
+      if (transaction.docChanged) {
+        lastAppliedValueRef.current = serializeMarkdown(nextState.doc);
+        latestProps.current.onChange?.(
+          lastAppliedValueRef.current,
+          nextState.doc,
+        );
+      }
+      return nextState;
     });
-
-    viewRef.current = view;
-    return () => {
-      view.destroy();
-      viewRef.current = null;
-    };
   }, []);
 
-  return <div className={["gfmd-editor", props.className].filter(Boolean).join(" ")} ref={hostRef} />;
+  return (
+    <div className={["gfmd-editor", props.className].filter(Boolean).join(" ")}>
+      {props.toolbar !== false && editorView && editorState ? (
+        <GFMarkdownToolbar
+          className={props.toolbarClassName}
+          state={editorState}
+          view={editorView}
+        />
+      ) : null}
+      <ProseMirror
+        attributes={{
+          class: "gfmd-editor-surface",
+          "data-placeholder": props.placeholder ?? "",
+        }}
+        dispatchTransaction={dispatchTransaction}
+        nodeViews={nodeViews}
+        state={editorState}
+      >
+        <ProseMirrorDoc />
+        <EditorViewObserver onViewChange={setEditorView} />
+      </ProseMirror>
+    </div>
+  );
+}
+
+function EditorViewObserver({
+  onViewChange,
+}: {
+  onViewChange: React.Dispatch<React.SetStateAction<EditorView | null>>;
+}) {
+  useEditorEffect(
+    (view) => {
+      onViewChange(view);
+      return () => onViewChange(null);
+    },
+    [onViewChange],
+  );
+
+  return null;
 }
 
 function createPlugins(options: CreateGFMarkdownStateOptions): Plugin[] {
@@ -69,6 +119,9 @@ function createPlugins(options: CreateGFMarkdownStateOptions): Plugin[] {
     history(),
     reactKeys(),
     keymap({
+      Enter: splitCurrentListItem(),
+      Tab: changeListIndent("indent"),
+      "Shift-Tab": changeListIndent("outdent"),
       "Mod-z": undo,
       "Shift-Mod-z": redo,
       "Mod-y": redo,
@@ -77,25 +130,23 @@ function createPlugins(options: CreateGFMarkdownStateOptions): Plugin[] {
       "Mod-`": toggleMark(gfmSchema.marks.code),
     }),
     keymap(baseKeymap),
+    createTaskListPlugin(),
     inputRules({
-      rules: [
-        wrappingInputRule(/^>\s+\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s$/i, gfmSchema.nodes.alert, (match) => ({
-          kind: match[1].toUpperCase(),
-        })),
-        textblockTypeInputRule(/^$/, gfmSchema.nodes.paragraph),
-      ],
+      rules: createMarkdownInputRules(),
     }),
-    createTokenConversionPlugin(),
-    createSuggestionPlugin(options),
+    tableEditing(),
   ];
 }
 
-function createNodeViews(optionsRef: React.MutableRefObject<GFMarkdownEditorProps>) {
+function createNodeViews(
+  optionsRef: React.MutableRefObject<GFMarkdownEditorProps>,
+) {
   return {
-    alert: (node: ProseMirrorNode, view: EditorView, getPos: () => number | undefined) =>
-      new AlertNodeView(node, view, getPos),
-    reference: (node: ProseMirrorNode) => new ReferenceNodeView(node, optionsRef),
-    mention: (node: ProseMirrorNode) => new MentionNodeView(node, optionsRef),
+    code_block: (
+      node: ProseMirrorNode,
+      view: EditorView,
+      getPos: () => number | undefined,
+    ) => new CodeBlockNodeView(node, view, getPos),
   };
 }
 

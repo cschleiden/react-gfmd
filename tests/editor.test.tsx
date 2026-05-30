@@ -1,0 +1,590 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { undo } from "prosemirror-history";
+import { TextSelection, type EditorState, type Transaction } from "prosemirror-state";
+import type { EditorView } from "prosemirror-view";
+import { describe, expect, it, vi } from "vitest";
+import {
+  createGFMarkdownState,
+  GFMarkdownEditor,
+  serializeMarkdown,
+} from "../src";
+import {
+  changeListIndent,
+  changeListType,
+  currentListKind,
+} from "../src/lists/commands";
+
+const context = { owner: "cschleiden", repo: "react-gfmd" };
+
+describe("GFMarkdownEditor", () => {
+  it("renders the formatting toolbar by default", () => {
+    render(<GFMarkdownEditor context={context} value="Hello" />);
+
+    expect(screen.getByLabelText("Markdown formatting")).toBeTruthy();
+    expect(screen.getByTitle("Bold")).toBeTruthy();
+    expect(screen.getByTitle("Code block")).toBeTruthy();
+  });
+
+  it("can hide the formatting toolbar", () => {
+    render(
+      <GFMarkdownEditor context={context} toolbar={false} value="Hello" />,
+    );
+
+    expect(screen.queryByLabelText("Markdown formatting")).toBeNull();
+  });
+
+  it("renders task list checkboxes", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={"- [ ] Open task\n- [x] Done task"}
+      />,
+    );
+
+    const openTask = screen.getByRole("checkbox", {
+      name: "Mark task complete",
+    });
+    const doneTask = screen.getByRole("checkbox", {
+      name: "Mark task incomplete",
+    });
+
+    expect((openTask as HTMLInputElement).checked).toBe(false);
+    expect((doneTask as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("toggles unchecked task list checkboxes", async () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value="- [ ] Task item"
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Mark task complete" }),
+    );
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenLastCalledWith(
+        "- [x] Task item",
+        expect.anything(),
+      );
+    });
+  });
+
+  it("toggles checked task list checkboxes", async () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value="- [x] Task item"
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Mark task incomplete" }),
+    );
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenLastCalledWith(
+        "- [ ] Task item",
+        expect.anything(),
+      );
+    });
+  });
+
+  it("inserts task lists from the toolbar", () => {
+    const onChange = vi.fn();
+    render(<GFMarkdownEditor context={context} onChange={onChange} value="" />);
+
+    fireEvent.click(screen.getByTitle("Task list"));
+
+    expect(
+      screen.getByRole("checkbox", { name: "Mark task complete" }),
+    ).toBeTruthy();
+    expect(onChange).toHaveBeenLastCalledWith(
+      "- [ ] Task item",
+      expect.anything(),
+    );
+  });
+
+  it("converts the current paragraph into a task list item", () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value="Task item"
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("Task list"));
+
+    expect(
+      screen.getByRole("checkbox", { name: "Mark task complete" }),
+    ).toBeTruthy();
+    expect(onChange).toHaveBeenLastCalledWith(
+      "- [ ] Task item",
+      expect.anything(),
+    );
+  });
+
+  it("converts the current list item into a task list item", () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value="- Plain item"
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("Task list"));
+
+    expect(
+      screen.getByRole("checkbox", { name: "Mark task complete" }),
+    ).toBeTruthy();
+    expect(onChange).toHaveBeenLastCalledWith(
+      "- [ ] Plain item",
+      expect.anything(),
+    );
+  });
+
+  it("changes only the current list item type from the toolbar", () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value="- first\n- second"
+      />,
+    );
+
+    const editor = document.querySelector(".gfmd-editor-surface") as HTMLElement;
+    expect(editor).toBeTruthy();
+    editor.focus();
+
+    const numberedListButton = screen.getByTitle("Numbered list");
+    fireEvent.mouseDown(numberedListButton);
+    fireEvent.click(numberedListButton);
+
+    expect(onChange).toHaveBeenLastCalledWith(
+      "1. first\\n- second",
+      expect.anything(),
+    );
+  });
+
+  it("can undo list type changes", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "- first\n- second",
+    });
+
+    expect(
+      changeListType("ordered")(
+        state,
+        (tr) => {
+          state = state.apply(tr);
+        },
+        undefined,
+      ),
+    ).toBe(true);
+    expect(serializeMarkdown(state.doc)).toBe(`1. first
+
+- second`);
+
+    expect(
+      undo(state, (tr) => {
+        state = state.apply(tr);
+      }),
+    ).toBe(true);
+    expect(serializeMarkdown(state.doc)).toBe("- first\n- second");
+  });
+
+  it("changes only selected list items", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "- first\n- second\n- third",
+    });
+    const secondPos = findTextPosition(state, "second");
+    const thirdPos = findTextPosition(state, "third");
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, secondPos, thirdPos + 5)),
+    );
+
+    expect(
+      changeListType("ordered")(
+        state,
+        (tr) => {
+          state = state.apply(tr);
+        },
+        undefined,
+      ),
+    ).toBe(true);
+
+    expect(serializeMarkdown(state.doc)).toBe(`- first
+
+1. second
+2. third`);
+  });
+
+  it("changes the current task item into a plain list item", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "- [ ] task\n- other",
+    });
+    const taskPos = findTextPosition(state, "task");
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, taskPos + 1)),
+    );
+
+    expect(
+      changeListType("bullet")(
+        state,
+        (tr) => {
+          state = state.apply(tr);
+        },
+        undefined,
+      ),
+    ).toBe(true);
+
+    expect(serializeMarkdown(state.doc)).toBe("- task\n- other");
+  });
+
+  it("reports the list type for the current line", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "- bullet\n1. ordered\n- [ ] task",
+    });
+
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, findTextPosition(state, "bullet") + 1),
+      ),
+    );
+    expect(currentListKind(state)).toBe("bullet");
+
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, findTextPosition(state, "ordered") + 1),
+      ),
+    );
+    expect(currentListKind(state)).toBe("ordered");
+
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, findTextPosition(state, "task") + 1),
+      ),
+    );
+    expect(currentListKind(state)).toBe("task");
+  });
+
+  it("waits for the character after dash-space before starting a bullet list", () => {
+    let state = createGFMarkdownState({ context, value: "" });
+
+    state = typeText(state, "- ");
+    expect(state.doc.firstChild?.type.name).toBe("paragraph");
+    expect(state.doc.textContent).toBe("- ");
+
+    state = typeText(state, "a");
+    expect(state.doc.firstChild?.type.name).toBe("bullet_list");
+    expect(serializeMarkdown(state.doc)).toBe("- a");
+  });
+
+  it("turns dash-space-checkbox into a task list", () => {
+    const state = typeText(createGFMarkdownState({ context, value: "" }), "- [ ]");
+    const listItem = state.doc.firstChild?.firstChild;
+
+    expect(state.doc.firstChild?.type.name).toBe("bullet_list");
+    expect(listItem?.type.name).toBe("task_list_item");
+    expect(listItem?.attrs.checked).toBe(false);
+  });
+
+  it("converts hash-space into an empty heading immediately", () => {
+    let state = createGFMarkdownState({ context, value: "" });
+
+    state = typeText(state, "# ");
+    expect(state.doc.firstChild?.type.name).toBe("heading");
+    expect(state.doc.firstChild?.attrs.level).toBe(1);
+    expect(state.doc.textContent).toBe("");
+
+    state = typeText(state, "foo");
+    expect(serializeMarkdown(state.doc)).toBe("# foo");
+  });
+
+  it("uses the typed hash count as the heading level", () => {
+    const state = typeText(createGFMarkdownState({ context, value: "" }), "## foo");
+
+    expect(state.doc.firstChild?.type.name).toBe("heading");
+    expect(state.doc.firstChild?.attrs.level).toBe(2);
+    expect(serializeMarkdown(state.doc)).toBe("## foo");
+  });
+
+  it("converts star and underscore emphasis shortcuts into marks", () => {
+    const starState = typeText(createGFMarkdownState({ context, value: "" }), "*foo*");
+    const underscoreState = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      "_foo_",
+    );
+
+    expect(firstTextMarkNames(starState)).toEqual(["em"]);
+    expect(firstTextMarkNames(underscoreState)).toEqual(["em"]);
+    expect(serializeMarkdown(starState.doc)).toBe("*foo*");
+    expect(serializeMarkdown(underscoreState.doc)).toBe("*foo*");
+  });
+
+  it("converts double star and underscore strong shortcuts into marks", () => {
+    const starState = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      "**foo**",
+    );
+    const underscoreState = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      "__foo__",
+    );
+
+    expect(firstTextMarkNames(starState)).toEqual(["strong"]);
+    expect(firstTextMarkNames(underscoreState)).toEqual(["strong"]);
+    expect(serializeMarkdown(starState.doc)).toBe("**foo**");
+    expect(serializeMarkdown(underscoreState.doc)).toBe("**foo**");
+  });
+
+  it("converts backtick code shortcuts into marks", () => {
+    const state = typeText(createGFMarkdownState({ context, value: "" }), "`foo`");
+
+    expect(firstTextMarkNames(state)).toEqual(["code"]);
+    expect(serializeMarkdown(state.doc)).toBe("`foo`");
+  });
+
+  it("updates code block language from the language dropdown", () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value={"```ts\nconst value = 1;\n```"}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Code language" }));
+    fireEvent.click(screen.getByText("JavaScript"));
+
+    expect(onChange).toHaveBeenLastCalledWith(
+      "```javascript\nconst value = 1;\n```",
+      expect.anything(),
+    );
+  });
+
+  it("renders a clear formatting action in the toolbar", () => {
+    render(<GFMarkdownEditor context={context} value="**bold** *italic*" />);
+
+    expect(screen.getByTitle("Clear formatting")).toBeTruthy();
+  });
+
+  it("indents task items in mixed lists", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "- plain\n- [ ] task",
+    });
+
+    let taskPos = -1;
+    state.doc.descendants((node, pos) => {
+      if (node.isText && node.text?.includes("task")) {
+        taskPos = pos;
+        return false;
+      }
+      return true;
+    });
+
+    expect(taskPos).toBeGreaterThan(0);
+
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, taskPos + 1)),
+    );
+
+    const command = changeListIndent("indent");
+    const canRun = command(state, undefined, undefined);
+    expect(canRun).toBe(true);
+
+    command(
+      state,
+      (tr) => {
+        state = state.apply(tr);
+      },
+      undefined,
+    );
+
+    expect(state.doc.childCount).toBe(1);
+    const rootList = state.doc.firstChild;
+    expect(rootList?.type.name).toBe("bullet_list");
+    expect(rootList?.childCount).toBe(1);
+
+    const firstItem = rootList?.firstChild;
+    expect(
+      firstItem?.type.name === "list_item" ||
+        (firstItem?.type.name === "task_list_item" &&
+          firstItem?.attrs.checked === null),
+    ).toBe(true);
+    const nestedList = firstItem?.lastChild;
+    expect(nestedList?.type.name).toBe("bullet_list");
+    expect(nestedList?.firstChild?.type.name).toBe("task_list_item");
+  });
+
+  it("indents and outdents regular list levels", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "- one\n- two",
+    });
+
+    let twoPos = -1;
+    state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === "two") {
+        twoPos = pos;
+        return false;
+      }
+      return true;
+    });
+
+    expect(twoPos).toBeGreaterThan(0);
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, twoPos + 1)),
+    );
+
+    const indent = changeListIndent("indent");
+    expect(indent(state, undefined, undefined)).toBe(true);
+    indent(
+      state,
+      (tr) => {
+        state = state.apply(tr);
+      },
+      undefined,
+    );
+
+    const nestedAfterIndent = state.doc.firstChild?.firstChild?.lastChild;
+    expect(nestedAfterIndent?.type.name).toBe("bullet_list");
+
+    const outdent = changeListIndent("outdent");
+    expect(outdent(state, undefined, undefined)).toBe(true);
+    outdent(
+      state,
+      (tr) => {
+        state = state.apply(tr);
+      },
+      undefined,
+    );
+
+    expect(state.doc.firstChild?.childCount).toBe(2);
+  });
+
+  it("handles Tab and Shift-Tab for list indentation", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "- one\n- two",
+    });
+
+    const twoPos = findTextPosition(state, "two");
+    expect(twoPos).toBeGreaterThan(0);
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, twoPos + 1)),
+    );
+
+    state = runKey(state, "Tab");
+    expect(state.doc.firstChild?.firstChild?.lastChild?.type.name).toBe(
+      "bullet_list",
+    );
+
+    state = runKey(state, "Shift-Tab");
+    expect(state.doc.firstChild?.childCount).toBe(2);
+  });
+});
+
+function typeText(state: EditorState, text: string) {
+  let currentState = state;
+
+  for (const character of text) {
+    let handled = false;
+    const view = {
+      composing: false,
+      get state() {
+        return currentState;
+      },
+      dispatch(transaction: Transaction) {
+        currentState = currentState.apply(transaction);
+      },
+    } as unknown as EditorView;
+
+    for (const plugin of currentState.plugins) {
+      const handler = plugin.props.handleTextInput;
+      if (
+        handler?.call(
+          plugin,
+          view,
+          currentState.selection.from,
+          currentState.selection.to,
+          character,
+          () => currentState.tr.insertText(character),
+        )
+      ) {
+        handled = true;
+        break;
+      }
+    }
+
+    if (!handled) {
+      currentState = currentState.apply(currentState.tr.insertText(character));
+    }
+  }
+
+  return currentState;
+}
+
+function firstTextMarkNames(state: EditorState) {
+  const textNode = state.doc.firstChild?.firstChild;
+
+  return (textNode?.marks ?? []).map((mark) => mark.type.name);
+}
+
+function runKey(state: EditorState, keyName: string) {
+  let currentState = state;
+  const view = {
+    get state() {
+      return currentState;
+    },
+    dispatch(transaction: Transaction) {
+      currentState = currentState.apply(transaction);
+    },
+  } as unknown as EditorView;
+
+  for (const plugin of currentState.plugins) {
+    const handler = plugin.props.handleKeyDown;
+    if (
+      handler?.call(
+        plugin,
+        view,
+        new KeyboardEvent("keydown", {
+          key: keyName === "Shift-Tab" ? "Tab" : keyName,
+          shiftKey: keyName === "Shift-Tab",
+        }),
+      )
+    ) {
+      break;
+    }
+  }
+
+  return currentState;
+}
+
+function findTextPosition(state: EditorState, text: string) {
+  let found = -1;
+  state.doc.descendants((node, pos) => {
+    if (node.isText && node.text === text) {
+      found = pos;
+      return false;
+    }
+    return true;
+  });
+  return found;
+}
