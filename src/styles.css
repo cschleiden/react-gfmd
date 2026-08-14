@@ -280,8 +280,22 @@
   border-color: var(--gfmd-danger);
 }
 
+.gfmd-link-field input:disabled {
+  background: var(--gfmd-subtle);
+  color: var(--gfmd-muted-fg);
+}
+
+.gfmd-link-help,
 .gfmd-link-error {
   margin: 0;
+  font-size: 12px;
+}
+
+.gfmd-link-help {
+  color: var(--gfmd-muted-fg);
+}
+
+.gfmd-link-error {
   color: var(--gfmd-danger);
 }
 

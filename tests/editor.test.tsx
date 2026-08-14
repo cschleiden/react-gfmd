@@ -17,7 +17,6 @@ import {
 } from "../src";
 import {
   applyLinkEdit,
-  isLinkActive,
   linkSelection,
   openLink,
   removeLink,
@@ -790,6 +789,24 @@ Body
     );
   });
 
+  it("preserves empty links and titles through editor HTML", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={'[](https://example.com "Some title")'}
+      />,
+    );
+    const rendered = screen.getByRole("link", {
+      name: "Empty link to https://example.com",
+    });
+    const reparsed = parseHTML(`<p>${rendered.outerHTML}</p>`);
+
+    expect(serializeMarkdown(reparsed)).toBe(
+      '[](https://example.com "Some title")',
+    );
+    expect(reparsed.firstChild?.firstChild?.type.name).toBe("empty_link");
+  });
+
   it("creates, edits, and unlinks links without losing overlapping marks", () => {
     let state = createGFMarkdownState({ context, value: "**Bold label**" });
     const from = findTextPosition(state, "Bold label");
@@ -813,7 +830,7 @@ Body
     state = state.apply(
       state.tr.setSelection(TextSelection.create(state.doc, from + 2)),
     );
-    expect(isLinkActive(state)).toBe(true);
+    expect(linkIsActive(state)).toBe(true);
     const editSelection = linkSelection(state)!;
     state = state.apply(
       applyLinkEdit(state, editSelection, {
@@ -885,6 +902,158 @@ Body
     expect(linkSelection(selected)).toBeNull();
   });
 
+  it("edits a linked image without replacing its content", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "[![Build](badge.svg)](https://ci.example)",
+    });
+
+    const imagePosition = findNodePosition(state, "image");
+    state = state.apply(
+      state.tr.setSelection(NodeSelection.create(state.doc, imagePosition)),
+    );
+    const target = linkSelection(state);
+
+    expect(target?.kind).toBe("existing");
+    expect(target?.label).toBeNull();
+    state = state.apply(
+      applyLinkEdit(state, target!, {
+        href: "https://ci.example/new",
+        label: null,
+        title: "Build status",
+      }),
+    );
+
+    expect(state.doc.nodeAt(imagePosition)?.type.name).toBe("image");
+    expect(serializeMarkdown(state.doc)).toBe(
+      '[![Build](badge.svg)](https://ci.example/new "Build status")',
+    );
+  });
+
+  it("restores the selected inline node inside a mixed-content link", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "[text ![Build](badge.svg)](https://ci.example)",
+    });
+    const imagePosition = findNodePosition(state, "image");
+    state = state.apply(
+      state.tr.setSelection(NodeSelection.create(state.doc, imagePosition)),
+    );
+    const target = linkSelection(state)!;
+    state = state.apply(
+      applyLinkEdit(state, target, {
+        href: "https://ci.example/new",
+        label: null,
+        title: "",
+      }),
+    );
+
+    expect(state.selection).toBeInstanceOf(NodeSelection);
+    expect(state.selection.from).toBe(imagePosition);
+    expect((state.selection as NodeSelection).node.type.name).toBe("image");
+    expect(serializeMarkdown(state.doc)).toBe(
+      "[text ![Build](badge.svg)](https://ci.example/new)",
+    );
+  });
+
+  it("edits links containing hard breaks without position assumptions", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: `[a\\
+b](#old)`,
+    });
+    const aPosition = findTextPosition(state, "a");
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, aPosition + 1)),
+    );
+    const target = linkSelection(state);
+    expect(target?.label).toBeNull();
+    state = state.apply(
+      applyLinkEdit(state, target!, {
+        href: "#new",
+        label: null,
+        title: "",
+      }),
+    );
+
+    const paragraph = state.doc.firstChild!;
+    expect(paragraph.childCount).toBe(3);
+    expect(paragraph.child(0).text).toBe("a");
+    expect(paragraph.child(1).type.name).toBe("hard_break");
+    expect(paragraph.child(2).text).toBe("b");
+    for (let index = 0; index < paragraph.childCount; index += 1) {
+      expect(
+        gfmSchema.marks.link.isInSet(paragraph.child(index).marks)?.attrs.href,
+      ).toBe("#new");
+    }
+    expect(serializeMarkdown(state.doc)).toContain("(#new)");
+  });
+
+  it.each([
+    {
+      markdown: "see [**Old**](#old)",
+      expected: "see [**New**](#new)",
+    },
+    {
+      markdown: "**see**[Old](#old)",
+      expected: "**see**[New](#new)",
+    },
+  ])(
+    "relabels without leaking or dropping adjacent marks: $markdown",
+    ({ markdown, expected }) => {
+      let state = createGFMarkdownState({ context, value: markdown });
+      const oldPosition = findTextPosition(state, "Old");
+      state = state.apply(
+        state.tr.setSelection(TextSelection.create(state.doc, oldPosition + 1)),
+      );
+
+      state = state.apply(
+        applyLinkEdit(state, linkSelection(state)!, {
+          href: "#new",
+          label: "New",
+          title: "",
+        }),
+      );
+
+      expect(serializeMarkdown(state.doc)).toBe(expected);
+    },
+  );
+
+  it("inherits link formatting when text is appended to the label", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "[**Old**](#old)",
+    });
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, 2)),
+    );
+    state = state.apply(
+      applyLinkEdit(state, linkSelection(state)!, {
+        href: "#new",
+        label: "Oldest",
+        title: "",
+      }),
+    );
+
+    expect(serializeMarkdown(state.doc)).toBe("[**Oldest**](#new)");
+  });
+
+  it("exposes opaque linked content as preserved, non-editable content", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value="[![Build](badge.svg)](https://ci.example)"
+      />,
+    );
+    const image = screen.getByRole("img", { name: "Build" });
+    fireEvent.click(image);
+    fireEvent.click(screen.getByRole("button", { name: "Edit link" }));
+
+    const label = screen.getByLabelText("Link text") as HTMLInputElement;
+    expect(label.disabled).toBe(true);
+    expect(label.value).toBe("Non-text link content");
+  });
+
   it("does not expose editable link destinations as native navigation targets", () => {
     render(
       <GFMarkdownEditor
@@ -894,9 +1063,17 @@ Body
     );
 
     const linkText = screen.getByText("Unsafe");
-    expect(linkText.tagName).toBe("SPAN");
+    expect(linkText.tagName).toBe("A");
     expect(linkText.getAttribute("href")).toBeNull();
     expect(linkText.getAttribute("data-href")).toBe("javascript:alert(1)");
+  });
+
+  it("renders safe destinations as native links for accessibility and copying", () => {
+    render(<GFMarkdownEditor context={context} value="[Docs](../docs)" />);
+
+    const link = screen.getByRole("link", { name: "Docs" });
+    expect(link.getAttribute("href")).toBe("../docs");
+    expect(link.getAttribute("data-href")).toBe("../docs");
   });
 
   it("keeps surrounding nested-list and table structure during link edits", () => {
@@ -1026,6 +1203,23 @@ Body
     expect(state.doc.childCount).toBe(2);
   });
 
+  it("auto-links the current token before a hard break", () => {
+    let state = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      "https://example.com",
+    );
+    state = state.apply(
+      state.tr.replaceSelectionWith(gfmSchema.nodes.hard_break.create()),
+    );
+
+    expect(linkIsActive(
+      state.apply(
+        state.tr.setSelection(TextSelection.create(state.doc, 2)),
+      ),
+    )).toBe(true);
+    expect(state.doc.firstChild?.lastChild?.type.name).toBe("hard_break");
+  });
+
   it("auto-links every GFM URL and email in pasted plain text", () => {
     let state = createGFMarkdownState({ context, value: "" });
     state = state.apply(
@@ -1043,6 +1237,21 @@ Body
     expect(autolinkRanges("../docs/file.md #heading `https://example.com`")).toEqual(
       [],
     );
+  });
+
+  it("evaluates only autolink tokens selected by the changed-range filter", () => {
+    expect(
+      autolinkRanges(
+        "https://first.example https://second.example",
+        (from) => from > 0,
+      ),
+    ).toEqual([
+      {
+        from: 22,
+        to: 44,
+        href: "https://second.example",
+      },
+    ]);
   });
 
   it("preserves overlapping strong marks when auto-linking", () => {
@@ -1067,7 +1276,7 @@ Body
       createGFMarkdownState({ context, value: "" }),
       "https://example.com ",
     );
-    expect(isLinkActive(
+    expect(linkIsActive(
       state.apply(
         state.tr.setSelection(TextSelection.create(state.doc, 2)),
       ),
@@ -1104,7 +1313,7 @@ Body
     );
     state = typeText(state, "later ");
 
-    expect(isLinkActive(
+    expect(linkIsActive(
       state.apply(
         state.tr.setSelection(TextSelection.create(state.doc, linkPosition + 2)),
       ),
@@ -1130,7 +1339,7 @@ Second paragraph.`,
         .setMeta("uiEvent", "paste"),
     );
 
-    expect(isLinkActive(
+    expect(linkIsActive(
       state.apply(
         state.tr.setSelection(TextSelection.create(state.doc, linkPosition + 2)),
       ),
@@ -1615,7 +1824,25 @@ function findTextPosition(state: EditorState, text: string) {
       found = pos;
       return false;
     }
+
     return true;
   });
   return found;
+}
+
+function findNodePosition(state: EditorState, typeName: string) {
+  let found = -1;
+  state.doc.descendants((node, pos) => {
+    if (node.type.name === typeName) {
+      found = pos;
+      return false;
+    }
+    return true;
+  });
+  return found;
+}
+
+function linkIsActive(state: EditorState) {
+  const selection = linkSelection(state);
+  return selection !== null && selection.kind !== "new";
 }

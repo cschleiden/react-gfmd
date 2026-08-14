@@ -1,6 +1,5 @@
 import type { Node as ProseMirrorNode } from "prosemirror-model";
 import { Plugin, PluginKey, type Transaction } from "prosemirror-state";
-import type { EditorView } from "prosemirror-view";
 import { parseWithRemark } from "./remark";
 import { gfmSchema } from "./schema";
 
@@ -11,14 +10,12 @@ interface AutolinkRange {
   from: number;
   to: number;
   href: string;
-  tokenFrom: number;
-  tokenTo: number;
 }
 
 export function createAutolinkPlugin() {
   return new Plugin({
     key: autolinkPluginKey,
-    appendTransaction(transactions, _oldState, newState) {
+    appendTransaction(transactions, oldState, newState) {
       if (
         !transactions.some((transaction) => transaction.docChanged) ||
         transactions.some((transaction) =>
@@ -32,90 +29,50 @@ export function createAutolinkPlugin() {
       const pasted = transactions.some(
         (transaction) => transaction.getMeta("uiEvent") === "paste",
       );
-      if (pasted) {
-        return autolinkDocument(newState.doc, newState.tr, changedRanges);
-      }
-
       const { $from, empty } = newState.selection;
-      if (
-        !empty ||
-        !$from.parent.isTextblock ||
-        !/\s/.test(
+      const whitespaceBoundary =
+        empty &&
+        $from.parent.isTextblock &&
+        /\s/.test(
           $from.parent.textBetween(
             Math.max(0, $from.parentOffset - 1),
             $from.parentOffset,
           ),
-        )
-      ) {
+        );
+      const blockBoundary =
+        empty &&
+        $from.parentOffset === 0 &&
+        oldState.selection.$from.parentOffset > 0;
+      const leafBoundary =
+        empty && $from.nodeBefore?.type === gfmSchema.nodes.hard_break;
+
+      if (!pasted && !whitespaceBoundary && !blockBoundary && !leafBoundary) {
         return null;
       }
 
-      return autolinkDocument(newState.doc, newState.tr, changedRanges);
-    },
-    props: {
-      handleKeyDown(view, event) {
-        if (event.key !== "Enter" || !view.state.selection.empty) return false;
-        applyAutolinksAtCursor(view);
-        return false;
-      },
+      return autolinkChangedRanges(newState.doc, newState.tr, changedRanges);
     },
   });
 }
 
-function applyAutolinksAtCursor(view: EditorView) {
-  const { $from } = view.state.selection;
-  if (!$from.parent.isTextblock) return;
-
-  const transaction = autolinkTokenBefore(
-    $from.parent,
-    $from.start(),
-    $from.parentOffset,
-    view.state.tr,
-  );
-  if (transaction) view.dispatch(transaction);
-}
-
-function autolinkDocument(
+function autolinkChangedRanges(
   doc: ProseMirrorNode,
   transaction: Transaction,
   changedRanges: ChangedRange[],
 ) {
-  doc.descendants((node, position) => {
-    if (node.isTextblock) {
+  const visited = new Set<number>();
+
+  for (const range of changedRanges) {
+    const from = Math.max(0, range.from - 1);
+    const to = Math.min(doc.content.size, range.to + 1);
+    doc.nodesBetween(from, to, (node, position) => {
+      if (!node.isTextblock || visited.has(position)) return true;
+      visited.add(position);
       addAutolinks(node, position + 1, transaction, changedRanges);
       return false;
-    }
-    return true;
-  });
-  return finishAutolinkTransaction(transaction);
-}
-
-function autolinkTokenBefore(
-  node: ProseMirrorNode,
-  start: number,
-  cursorOffset: number,
-  transaction: Transaction,
-) {
-  const run = textRunBefore(node, cursorOffset);
-  if (!run) return null;
-
-  const beforeCursor = run.text.slice(0, cursorOffset - run.from);
-  const tokenEnd = beforeCursor.search(/\s+$/);
-  const contentEnd = tokenEnd === -1 ? beforeCursor.length : tokenEnd;
-  const tokenStartMatch = beforeCursor.slice(0, contentEnd).match(/\S+$/);
-  const tokenStart = tokenStartMatch?.index ?? contentEnd;
-  const token = beforeCursor.slice(tokenStart, contentEnd);
-
-  for (const range of autolinkRanges(token)) {
-    const from = start + run.from + tokenStart + range.from;
-    const to = start + run.from + tokenStart + range.to;
-    if (!canAutolink(transaction.doc, from, to)) continue;
-    transaction.addMark(
-      from,
-      to,
-      gfmSchema.marks.link.create({ href: range.href, title: null }),
-    );
+    });
   }
+
   return finishAutolinkTransaction(transaction);
 }
 
@@ -128,21 +85,13 @@ function addAutolinks(
   textblock.descendants((node, position) => {
     if (!node.isText || !node.text) return;
     const nodeFrom = start + position;
-    const nodeTo = nodeFrom + node.text.length;
-    if (!changedRanges.some((range) => touches(range, nodeFrom, nodeTo))) {
-      return;
-    }
+    const ranges = autolinkRanges(node.text, (tokenFrom, tokenTo) =>
+      changedRanges.some((changed) =>
+        touches(changed, nodeFrom + tokenFrom, nodeFrom + tokenTo),
+      ),
+    );
 
-    for (const range of autolinkRanges(node.text)) {
-      const tokenFrom = nodeFrom + range.tokenFrom;
-      const tokenTo = nodeFrom + range.tokenTo;
-      if (
-        !changedRanges.some((changed) =>
-          touches(changed, tokenFrom, tokenTo),
-        )
-      ) {
-        continue;
-      }
+    for (const range of ranges) {
       const from = nodeFrom + range.from;
       const to = nodeFrom + range.to;
       if (!canAutolink(transaction.doc, from, to)) continue;
@@ -160,12 +109,16 @@ function finishAutolinkTransaction(transaction: Transaction) {
   return transaction.setMeta(autolinkPluginKey, true);
 }
 
-export function autolinkRanges(text: string): AutolinkRange[] {
+export function autolinkRanges(
+  text: string,
+  includeToken: (from: number, to: number) => boolean = () => true,
+): AutolinkRange[] {
   const ranges: AutolinkRange[] = [];
 
   for (const match of text.matchAll(nonWhitespacePattern)) {
     if (match.index === undefined) continue;
     const token = match[0];
+    if (!includeToken(match.index, match.index + token.length)) continue;
     const parsed = parseWithRemark(token);
     if (parsed.textContent !== token || parsed.childCount !== 1) continue;
 
@@ -181,8 +134,6 @@ export function autolinkRanges(text: string): AutolinkRange[] {
           from: match.index! + offset,
           to: match.index! + offset + length,
           href: String(link.attrs.href),
-          tokenFrom: match.index!,
-          tokenTo: match.index! + token.length,
         });
       }
 
@@ -228,28 +179,4 @@ function canAutolink(doc: ProseMirrorNode, from: number, to: number) {
     !doc.rangeHasMark(from, to, gfmSchema.marks.link) &&
     !doc.rangeHasMark(from, to, gfmSchema.marks.code)
   );
-}
-
-function textRunBefore(node: ProseMirrorNode, cursorOffset: number) {
-  let text = "";
-  let from = cursorOffset;
-
-  for (let index = node.childCount - 1; index >= 0; index -= 1) {
-    const child = node.child(index);
-    let childFrom = 0;
-    for (let previous = 0; previous < index; previous += 1) {
-      childFrom += node.child(previous).nodeSize;
-    }
-    if (childFrom >= cursorOffset) continue;
-    if (!child.isText || !child.text) break;
-
-    const available = child.text.slice(
-      0,
-      Math.min(child.text.length, cursorOffset - childFrom),
-    );
-    text = available + text;
-    from = childFrom;
-  }
-
-  return text ? { from, text } : null;
 }

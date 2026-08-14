@@ -11,6 +11,7 @@ import {
   orderedListNodeSpec,
   taskListItemNodeSpec,
 } from "./lists/schema";
+import { isSafeInteractionHref } from "./link-url";
 
 const baseNodes = basicSchema.spec.nodes;
 const tableNodeSpecs = tableNodes({
@@ -69,23 +70,29 @@ export const gfmSchema = new Schema({
         },
         parseDOM: [
           {
-            tag: "span[data-gfmd-empty-link]",
+            tag: "a[data-gfmd-empty-link]",
+            priority: 60,
             getAttrs: (node) => {
               if (!(node instanceof HTMLElement)) return false;
               return {
                 href: node.getAttribute("data-href") ?? "",
-                title: node.getAttribute("data-title"),
+                title:
+                  node.getAttribute("data-title") ??
+                  node.getAttribute("title"),
               };
             },
           },
         ],
         toDOM: (node) => [
-          "span",
+          "a",
           {
             "aria-label": `Empty link to ${node.attrs.href}`,
             "data-gfmd-empty-link": "",
             "data-href": node.attrs.href,
-            "data-title": node.attrs.title,
+            href: isSafeInteractionHref(node.attrs.href)
+              ? node.attrs.href
+              : undefined,
+            title: node.attrs.title,
           },
           "\u200b",
         ],
@@ -132,6 +139,19 @@ export const gfmSchema = new Schema({
       ...basicSchema.spec.marks.get("link"),
       parseDOM: [
         {
+          tag: "a[data-gfmd-link]",
+          getAttrs: (node) => {
+            if (!(node instanceof HTMLElement)) return false;
+            return {
+              href:
+                node.getAttribute("data-href") ??
+                node.getAttribute("href") ??
+                "",
+              title: node.getAttribute("title"),
+            };
+          },
+        },
+        {
           tag: "a[href]",
           getAttrs: (node) => {
             if (!(node instanceof HTMLElement)) return false;
@@ -141,24 +161,16 @@ export const gfmSchema = new Schema({
             };
           },
         },
-        {
-          tag: "span[data-gfmd-link]",
-          getAttrs: (node) => {
-            if (!(node instanceof HTMLElement)) return false;
-            return {
-              href: node.getAttribute("data-href") ?? "",
-              title: node.getAttribute("data-title"),
-            };
-          },
-        },
       ],
       toDOM: (mark) => [
-        "span",
+        "a",
         {
-          "aria-label": `Link to ${mark.attrs.href}`,
           "data-gfmd-link": "",
           "data-href": mark.attrs.href,
-          "data-title": mark.attrs.title,
+          href: isSafeInteractionHref(mark.attrs.href)
+            ? mark.attrs.href
+            : undefined,
+          title: mark.attrs.title,
         },
         0,
       ],

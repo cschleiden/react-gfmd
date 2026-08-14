@@ -35,6 +35,7 @@ import {
 import { createTaskListPlugin } from "./lists/plugin";
 import { parseMarkdown, serializeMarkdown } from "./markdown";
 import { gfmSchema } from "./schema";
+import { createLinkInteractionPlugin } from "./link";
 import { GFMarkdownToolbar } from "./toolbar";
 
 export type {
@@ -148,24 +149,7 @@ function createPlugins(options: CreateGFMarkdownStateOptions): Plugin[] {
     inputRules({
       rules: createMarkdownInputRules(),
     }),
-    new Plugin({
-      props: {
-        handleDOMEvents: {
-          click: (_view, event) => {
-            const target = event.target;
-            if (
-              !(target instanceof Element) ||
-              !target.closest("[data-gfmd-link], [data-gfmd-empty-link]")
-            ) {
-              return false;
-            }
-
-            event.preventDefault();
-            return false;
-          },
-        },
-      },
-    }),
+    createLinkInteractionPlugin(),
     tableEditing(),
   ];
 }
