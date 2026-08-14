@@ -201,7 +201,7 @@ function dedentList(tr: Transaction) {
 
   range = indentSiblingsOfItems(tr, range);
   range = indentSiblingsOfList(tr, range);
-  range = changeItemsType(tr, range, parent.parentList, parent.parentItem);
+  range = changeListType(tr, range, parent.parentList);
 
   const target = liftTarget(range);
   if (typeof target !== "number") return true;
@@ -289,15 +289,13 @@ function indentSiblingsOfList(tr: Transaction, range: NodeRange) {
   return range;
 }
 
-function changeItemsType(
+function changeListType(
   tr: Transaction,
   range: NodeRange,
   parentList: ProseMirrorNode,
-  parentItem: ProseMirrorNode,
 ) {
   const wrapped = wrapSelectedItems({
     listType: parentList.type,
-    itemType: parentItem.type,
     tr,
   });
 
@@ -308,11 +306,9 @@ function changeItemsType(
 
 function wrapSelectedItems({
   listType,
-  itemType,
   tr,
 }: {
   listType: ProseMirrorNode["type"];
-  itemType: ProseMirrorNode["type"];
   tr: Transaction;
 }) {
   const range = calculateItemRange(tr.selection);
@@ -321,7 +317,7 @@ function wrapSelectedItems({
   const atStart = range.startIndex === 0;
   const { from, to } = tr.selection;
 
-  if (!wrapItems({ listType, itemType, tr, range })) return false;
+  if (!wrapItems({ listType, tr, range })) return false;
 
   tr.setSelection(
     TextSelection.between(
@@ -336,30 +332,19 @@ function wrapSelectedItems({
 
 function wrapItems({
   listType,
-  itemType,
   tr,
   range,
 }: {
   listType: ProseMirrorNode["type"];
-  itemType: ProseMirrorNode["type"];
   tr: Transaction;
   range: NodeRange;
 }) {
   const oldList = range.parent;
   const slice = tr.doc.slice(range.start, range.end);
 
-  if (oldList.type === listType && slice.content.firstChild?.type === itemType) {
-    return false;
-  }
+  if (oldList.type === listType) return false;
 
-  const newItems: ProseMirrorNode[] = [];
-  for (let i = 0; i < slice.content.childCount; i += 1) {
-    const oldItem = slice.content.child(i);
-    if (!itemType.validContent(oldItem.content)) return false;
-    newItems.push(itemType.createChecked(null, oldItem.content));
-  }
-
-  const newList = listType.createChecked(null, newItems);
+  const newList = listType.createChecked(null, slice.content);
   tr.replaceRange(
     range.start,
     range.end,

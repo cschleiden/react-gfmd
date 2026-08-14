@@ -535,6 +535,63 @@ Body
     state = runKey(state, "Shift-Tab");
     expect(state.doc.firstChild?.childCount).toBe(2);
   });
+
+  it("outdents a nested item on Backspace without flattening descendants", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: `- parent
+  - child
+    - grandchild
+- tail`,
+    });
+    const originalDoc = state.doc.toJSON();
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, findTextPosition(state, "child")),
+      ),
+    );
+
+    state = runKey(state, "Backspace");
+
+    expect(serializeMarkdown(state.doc)).toBe(`- parent
+- child
+  - grandchild
+- tail`);
+    const reparsed = createGFMarkdownState({
+      context,
+      value: serializeMarkdown(state.doc),
+    });
+    expect(reparsed.doc.toJSON()).toEqual(state.doc.toJSON());
+
+    expect(
+      undo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(state.doc.toJSON()).toEqual(originalDoc);
+  });
+
+  it("preserves task state when Backspace outdents a mixed nested item", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: `- plain
+  - [x] task
+- tail`,
+    });
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, findTextPosition(state, "task")),
+      ),
+    );
+
+    state = runKey(state, "Backspace");
+
+    expect(serializeMarkdown(state.doc)).toBe(`- plain
+- [x] task
+- tail`);
+    expect(state.doc.firstChild?.child(1).type.name).toBe("task_list_item");
+    expect(state.doc.firstChild?.child(1).attrs.checked).toBe(true);
+  });
 });
 
 function typeText(state: EditorState, text: string) {

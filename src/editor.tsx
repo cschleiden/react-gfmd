@@ -21,7 +21,10 @@ import type {
 import { CodeBlockNodeView } from "./features/code-block";
 import { createMarkdownInputRules } from "./input-rules";
 import { changeListIndent } from "./lists/commands";
-import { splitCurrentListItem } from "./lists/keymap";
+import {
+  outdentNestedListItemAtStart,
+  splitCurrentListItem,
+} from "./lists/keymap";
 import { createTaskListPlugin } from "./lists/plugin";
 import { parseMarkdown, serializeMarkdown } from "./markdown";
 import { gfmSchema } from "./schema";
@@ -120,6 +123,7 @@ function createPlugins(options: CreateGFMarkdownStateOptions): Plugin[] {
     reactKeys(),
     keymap({
       Enter: splitCurrentListItem(),
+      Backspace: outdentNestedListItemAtStart(),
       Tab: changeListIndent("indent"),
       "Shift-Tab": changeListIndent("outdent"),
       "Mod-z": undo,
