@@ -9,6 +9,8 @@ import {
   footnoteRenameError,
   renameFootnote,
 } from "./commands";
+import { footnoteEntry } from "./model";
+import { footnoteIndexForState } from "./plugin";
 
 export class FootnoteReferenceNodeView implements NodeView {
   dom: HTMLElement;
@@ -56,12 +58,11 @@ export class FootnoteReferenceNodeView implements NodeView {
 
   private navigateToDefinition = () => {
     const identifier = String(this.node.attrs.identifier);
-    const definitionPos = findFootnotePosition(
-      this.view.state.doc,
-      "footnote_definition",
+    const definitionPos = footnoteEntry(
+      footnoteIndexForState(this.view.state),
       identifier,
-    );
-    if (definitionPos === null) {
+    )?.definitionPositions[0];
+    if (definitionPos === undefined) {
       const pos = this.getPos();
       if (typeof pos === "number") {
         this.view.dispatch(
@@ -116,7 +117,6 @@ export class FootnoteDefinitionNodeView implements NodeView {
   constructor(
     private node: ProseMirrorNode,
     private view: EditorView,
-    private getPos: () => number | undefined,
   ) {
     this.dom = document.createElement("section");
     this.dom.className = "gfmd-footnote-definition";
@@ -212,10 +212,11 @@ export class FootnoteDefinitionNodeView implements NodeView {
 
   private render() {
     const label = displayLabel(this.node);
-    const referencePositions = findFootnoteReferencePositions(
-      this.view.state.doc,
-      String(this.node.attrs.identifier),
-    );
+    const referencePositions =
+      footnoteEntry(
+        footnoteIndexForState(this.view.state),
+        String(this.node.attrs.identifier),
+      )?.referencePositions ?? [];
     this.dom.dataset.identifier = String(this.node.attrs.identifier);
     this.dom.setAttribute("aria-label", `Footnote ${label} definition`);
     if (document.activeElement !== this.labelInput) {
@@ -226,7 +227,7 @@ export class FootnoteDefinitionNodeView implements NodeView {
     this.renderBackReferences(label, referencePositions);
   }
 
-  private renderBackReferences(label: string, positions: number[]) {
+  private renderBackReferences(label: string, positions: readonly number[]) {
     this.backReferences.replaceChildren();
     this.backReferences.setAttribute(
       "aria-label",
@@ -253,45 +254,6 @@ export class FootnoteDefinitionNodeView implements NodeView {
       this.backReferences.append(button);
     });
   }
-}
-
-function findFootnotePosition(
-  doc: ProseMirrorNode,
-  typeName: "footnote_reference" | "footnote_definition",
-  identifier: string,
-) {
-  let found: number | null = null;
-  doc.descendants((node, pos) => {
-    if (
-      node.type.name === typeName &&
-      sameIdentifier(node.attrs.identifier, identifier)
-    ) {
-      found = pos;
-      return false;
-    }
-    return true;
-  });
-  return found;
-}
-
-function findFootnoteReferencePositions(
-  doc: ProseMirrorNode,
-  identifier: string,
-) {
-  const positions: number[] = [];
-  doc.descendants((node, pos) => {
-    if (
-      node.type.name === "footnote_reference" &&
-      sameIdentifier(node.attrs.identifier, identifier)
-    ) {
-      positions.push(pos);
-    }
-  });
-  return positions;
-}
-
-function sameIdentifier(left: unknown, right: unknown) {
-  return String(left).toLowerCase() === String(right).toLowerCase();
 }
 
 function displayLabel(node: ProseMirrorNode) {

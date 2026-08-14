@@ -1,10 +1,7 @@
 export {
-  footnoteDefinitions,
-  footnoteLabelForIdentifier,
   footnoteRenameError,
   insertFootnote,
   insertFootnoteReference,
-  normalizeFootnoteIdentifier,
   renameFootnote,
   selectedFootnoteIdentifier,
 } from "./commands";
@@ -12,4 +9,9 @@ export {
   FootnoteDefinitionNodeView,
   FootnoteReferenceNodeView,
 } from "./node-views";
-export { createFootnotePlugin } from "./plugin";
+export {
+  footnoteDefinitions,
+  normalizeFootnoteIdentifier,
+} from "./model";
+export { createFootnotePlugin, footnoteIndexForState } from "./plugin";
+export { FootnoteToolbar } from "./toolbar";

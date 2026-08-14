@@ -1,0 +1,359 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { undo } from "prosemirror-history";
+import { DOMParser, DOMSerializer } from "prosemirror-model";
+import { TextSelection, type EditorState } from "prosemirror-state";
+import { describe, expect, it, vi } from "vitest";
+import {
+  createGFMarkdownState,
+  GFMarkdownEditor,
+  gfmSchema,
+  insertFootnote,
+  insertFootnoteReference,
+  renameFootnote,
+  serializeMarkdown,
+} from "../src";
+
+const context = { owner: "cschleiden", repo: "react-gfmd" };
+
+describe("footnote editing", () => {
+  it("renders accessible references and editable structured definitions", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={"See this[^note].\n\n[^note]: Editable **content**."}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", {
+        name: "Footnote note; go to definition",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("region", {
+        name: "Footnote note definition",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("textbox", {
+        name: "Footnote note label",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText("content").tagName).toBe("STRONG");
+  });
+
+  it("inserts a collision-free footnote from the toolbar", () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value={"Existing[^1].\n\n[^1]: First."}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("Insert footnote"));
+    fireEvent.click(screen.getByText("New footnote"));
+
+    expect(
+      screen.getByRole("button", {
+        name: "Footnote 2; go to definition",
+      }),
+    ).toBeTruthy();
+    expect(onChange.mock.lastCall?.[0]).toContain("[^2]");
+    expect(onChange.mock.lastCall?.[0]).toContain("[^2]:");
+  });
+
+  it("inserts another reference to an existing footnote from the toolbar", () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value={"Existing[^note].\n\n[^note]: Shared definition."}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("Insert footnote"));
+    fireEvent.click(screen.getByText("[^note]"));
+
+    expect(
+      screen.getAllByRole("button", {
+        name: "Footnote note; go to definition",
+      }),
+    ).toHaveLength(2);
+    expect(onChange.mock.lastCall?.[0]).toContain(
+      "[^note]Existing[^note].",
+    );
+    expect(onChange.mock.lastCall?.[0].match(/\[\^note\]:/g)).toHaveLength(1);
+    expect(
+      screen.getByRole("button", {
+        name: "Go to reference 2 of 2 for footnote note",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("synchronizes definition label edits across matching nodes", () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value={"One[^note], two[^note].\n\n[^note]: Body."}
+      />,
+    );
+
+    fireEvent.change(
+      screen.getByRole("textbox", {
+        name: "Footnote note label",
+      }),
+      { target: { value: "renamed-note" } },
+    );
+
+    expect(
+      screen.getAllByRole("button", {
+        name: "Footnote renamed-note; go to definition",
+      }),
+    ).toHaveLength(2);
+    expect(onChange).toHaveBeenLastCalledWith(
+      "One[^renamed-note], two[^renamed-note].\n\n[^renamed-note]: Body.",
+      expect.anything(),
+    );
+  });
+
+  it("rejects label collisions", () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value={"A[^a] B[^b].\n\n[^a]: Alpha.\n\n[^b]: Beta."}
+      />,
+    );
+
+    const collisionInput = screen.getByRole("textbox", {
+      name: "Footnote a label",
+    });
+    fireEvent.change(collisionInput, { target: { value: "b" } });
+    expect((collisionInput as HTMLInputElement).validationMessage).toContain(
+      "already uses",
+    );
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("rejects labels that cannot round-trip", () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value={"See[^note].\n\n[^note]: Body."}
+      />,
+    );
+    const invalidInput = screen.getByRole("textbox", {
+      name: "Footnote note label",
+    });
+    fireEvent.change(invalidInput, { target: { value: "two words" } });
+    expect((invalidInput as HTMLInputElement).validationMessage).toContain(
+      "without spaces or brackets",
+    );
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("navigates between references and definitions", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={"See[^note].\n\n[^note]: Body."}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Footnote note; go to definition",
+      }),
+    );
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Footnote note label" }),
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Go to reference 1 of 1 for footnote note",
+      }),
+    );
+    expect(
+      document.querySelector(".gfmd-footnote-reference[data-selected]"),
+    ).toBeTruthy();
+  });
+
+  it("lists a compact navigation control for every reference", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={"First[^note], second[^note].\n\n[^note]: Body."}
+      />,
+    );
+
+    const first = screen.getByRole("button", {
+      name: "Go to reference 1 of 2 for footnote note",
+    });
+    const second = screen.getByRole("button", {
+      name: "Go to reference 2 of 2 for footnote note",
+    });
+    expect(first.textContent).toBe("1");
+    expect(second.textContent).toBe("2");
+
+    fireEvent.click(second);
+    const references = document.querySelectorAll(".gfmd-footnote-reference");
+    expect(references[1]?.hasAttribute("data-selected")).toBe(true);
+  });
+
+  it("preserves explicit orphans when either side is deleted", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "See[^note].\n\n[^note]: Keep this body.",
+    });
+    const referencePos = findNodePosition(state, "footnote_reference");
+    state = state.apply(state.tr.delete(referencePos, referencePos + 1));
+    expect(serializeMarkdown(state.doc)).toBe(
+      "See.\n\n[^note]: Keep this body.",
+    );
+
+    state = createGFMarkdownState({
+      context,
+      value: "See[^note].\n\n[^note]: Keep this body.",
+    });
+    const definitionPos = findNodePosition(state, "footnote_definition");
+    const definition = state.doc.nodeAt(definitionPos)!;
+    state = state.apply(
+      state.tr.delete(definitionPos, definitionPos + definition.nodeSize),
+    );
+    expect(serializeMarkdown(state.doc)).toBe("See[^note].");
+  });
+
+  it("undoes insertion and synchronized rename atomically", () => {
+    let state = createGFMarkdownState({ context, value: "Text" });
+    const original = state.doc.toJSON();
+    insertFootnote(state, (transaction) => {
+      state = state.apply(transaction);
+    });
+    expect(
+      undo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(state.doc.toJSON()).toEqual(original);
+
+    state = createGFMarkdownState({
+      context,
+      value: "One[^note] two[^note].\n\n[^note]: Body.",
+    });
+    const beforeRename = state.doc.toJSON();
+    renameFootnote("note", "renamed")(state, (transaction) => {
+      state = state.apply(transaction);
+    });
+    expect(
+      undo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(state.doc.toJSON()).toEqual(beforeRename);
+  });
+
+  it("inserts after selected content without deleting it", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "Keep selected text",
+    });
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, 1, 5)),
+    );
+
+    insertFootnote(state, (transaction) => {
+      state = state.apply(transaction);
+    });
+
+    expect(serializeMarkdown(state.doc)).toContain("Keep[^1] selected text");
+  });
+
+  it("inserts another reference without duplicating its definition", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "See[^note].\n\n[^note]: Shared.",
+    });
+
+    insertFootnoteReference("note")(state, (transaction) => {
+      state = state.apply(transaction);
+    });
+
+    let referenceCount = 0;
+    state.doc.descendants((node) => {
+      if (node.type.name === "footnote_reference") referenceCount += 1;
+    });
+    expect(referenceCount).toBe(2);
+    expect(serializeMarkdown(state.doc).match(/\[\^note\]:/g)).toHaveLength(1);
+  });
+
+  it("does not insert another reference for an orphan identifier", () => {
+    const state = createGFMarkdownState({
+      context,
+      value: "See[^orphan].",
+    });
+
+    expect(insertFootnoteReference("orphan")(state)).toBe(false);
+  });
+
+  it("round-trips copied footnote DOM without losing content", () => {
+    const doc = createGFMarkdownState({
+      context,
+      value: "See[^note].\n\n[^note]: First.\n\n    Second.",
+    }).doc;
+    const container = document.createElement("div");
+    container.append(
+      DOMSerializer.fromSchema(gfmSchema).serializeFragment(doc.content),
+    );
+
+    expect(
+      DOMParser.fromSchema(gfmSchema).parse(container).toJSON(),
+    ).toEqual(doc.toJSON());
+  });
+
+  it("replaces node views on controlled value updates", async () => {
+    const { rerender } = render(
+      <GFMarkdownEditor
+        context={context}
+        value={"See[^old].\n\n[^old]: Old body."}
+      />,
+    );
+
+    rerender(
+      <GFMarkdownEditor
+        context={context}
+        value={"See[^new].\n\n[^new]: New body."}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", {
+          name: "Footnote new; go to definition",
+        }),
+      ).toBeTruthy();
+    });
+    expect(screen.queryByText("Old body.")).toBeNull();
+    expect(screen.getByText("New body.")).toBeTruthy();
+  });
+});
+
+function findNodePosition(state: EditorState, typeName: string) {
+  let found = -1;
+  state.doc.descendants((node, pos) => {
+    if (node.type.name === typeName) {
+      found = pos;
+      return false;
+    }
+    return true;
+  });
+  return found;
+}

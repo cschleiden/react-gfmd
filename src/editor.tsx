@@ -167,8 +167,7 @@ function createNodeViews(
     footnote_definition: (
       node: ProseMirrorNode,
       view: EditorView,
-      getPos: () => number | undefined,
-    ) => new FootnoteDefinitionNodeView(node, view, getPos),
+    ) => new FootnoteDefinitionNodeView(node, view),
   };
 }
 

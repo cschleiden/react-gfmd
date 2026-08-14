@@ -1,0 +1,91 @@
+import type { Node as ProseMirrorNode } from "prosemirror-model";
+import { gfmSchema } from "../../schema";
+
+export interface FootnoteDefinition {
+  readonly identifier: string;
+  readonly label: string;
+}
+
+export interface FootnoteEntry extends FootnoteDefinition {
+  readonly definitionPositions: readonly number[];
+  readonly nodePositions: readonly number[];
+  readonly referencePositions: readonly number[];
+}
+
+export interface FootnoteIndex {
+  readonly definitions: readonly FootnoteDefinition[];
+  entries: ReadonlyMap<string, FootnoteEntry>;
+  occupiedIdentifiers: ReadonlySet<string>;
+}
+
+interface MutableFootnoteEntry {
+  identifier: string;
+  label: string;
+  definitionPositions: number[];
+  nodePositions: number[];
+  referencePositions: number[];
+}
+
+export function indexFootnotes(doc: ProseMirrorNode): FootnoteIndex {
+  const entries = new Map<string, MutableFootnoteEntry>();
+  const definitions: FootnoteDefinition[] = [];
+  const occupiedIdentifiers = new Set<string>();
+
+  doc.descendants((node, pos) => {
+    if (
+      node.type !== gfmSchema.nodes.footnote_reference &&
+      node.type !== gfmSchema.nodes.footnote_definition
+    ) {
+      return true;
+    }
+
+    const identifier = String(node.attrs.identifier);
+    const label = String(node.attrs.label ?? identifier);
+    const key = normalizeFootnoteIdentifier(identifier);
+    const entry = entries.get(key) ?? {
+      identifier,
+      label,
+      definitionPositions: [],
+      nodePositions: [],
+      referencePositions: [],
+    };
+
+    entry.nodePositions.push(pos);
+    occupiedIdentifiers.add(key);
+    occupiedIdentifiers.add(normalizeFootnoteIdentifier(label));
+
+    if (node.type === gfmSchema.nodes.footnote_definition) {
+      if (!entry.definitionPositions.length) {
+        entry.identifier = identifier;
+        entry.label = label;
+        definitions.push({ identifier, label });
+      }
+      entry.definitionPositions.push(pos);
+    } else {
+      entry.referencePositions.push(pos);
+    }
+
+    entries.set(key, entry);
+    return node.type === gfmSchema.nodes.footnote_definition;
+  });
+
+  return { definitions, entries, occupiedIdentifiers };
+}
+
+export function footnoteEntry(
+  index: FootnoteIndex,
+  identifier: string,
+) {
+  return index.entries.get(normalizeFootnoteIdentifier(identifier));
+}
+
+export function footnoteDefinitions(doc: ProseMirrorNode): FootnoteDefinition[] {
+  return indexFootnotes(doc).definitions.map(({ identifier, label }) => ({
+    identifier,
+    label,
+  }));
+}
+
+export function normalizeFootnoteIdentifier(label: string) {
+  return label.trim().replace(/\s+/g, " ").toLowerCase();
+}

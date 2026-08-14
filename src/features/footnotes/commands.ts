@@ -4,9 +4,14 @@ import {
   TextSelection,
   type Command,
   type EditorState,
-  type Transaction,
 } from "prosemirror-state";
 import { gfmSchema } from "../../schema";
+import {
+  type FootnoteIndex,
+  footnoteEntry,
+  indexFootnotes,
+  normalizeFootnoteIdentifier,
+} from "./model";
 
 export const insertFootnote: Command = (state, dispatch) => {
   if (
@@ -43,15 +48,14 @@ export function insertFootnoteReference(identifier: string): Command {
       return false;
     }
 
-    const definition = footnoteDefinitions(state.doc).find(
-      (candidate) =>
-        normalizeFootnoteIdentifier(candidate.identifier) ===
-        normalizeFootnoteIdentifier(identifier),
-    );
-    if (!definition) return false;
+    const definition = footnoteEntry(indexFootnotes(state.doc), identifier);
+    if (!definition?.definitionPositions.length) return false;
     if (!dispatch) return true;
 
-    const reference = gfmSchema.nodes.footnote_reference.create(definition);
+    const reference = gfmSchema.nodes.footnote_reference.create({
+      identifier: definition.identifier,
+      label: definition.label,
+    });
     const tr = state.tr.insert(state.selection.to, reference);
     dispatch(
       tr
@@ -62,41 +66,29 @@ export function insertFootnoteReference(identifier: string): Command {
   };
 }
 
-export function footnoteDefinitions(doc: ProseMirrorNode) {
-  const definitions: Array<{ identifier: string; label: string }> = [];
-  const seen = new Set<string>();
-  doc.descendants((node) => {
-    if (node.type !== gfmSchema.nodes.footnote_definition) return true;
-    const identifier = String(node.attrs.identifier);
-    const normalized = normalizeFootnoteIdentifier(identifier);
-    if (seen.has(normalized)) return false;
-    seen.add(normalized);
-    definitions.push({
-      identifier,
-      label: String(node.attrs.label ?? identifier),
-    });
-    return false;
-  });
-  return definitions;
-}
-
 export function renameFootnote(
   identifier: string,
   label: string,
 ): Command {
   return (state, dispatch) => {
+    const index = indexFootnotes(state.doc);
     const normalizedIdentifier = normalizeFootnoteIdentifier(label);
-    if (footnoteRenameError(state.doc, identifier, label)) {
+    if (footnoteRenameErrorForIndex(index, identifier, label)) {
       return false;
     }
-    if (!dispatch) return hasMatchingFootnote(state.doc, identifier);
+    const entry = footnoteEntry(index, identifier);
+    if (!dispatch) return Boolean(entry);
 
-    const tr = renameMatchingFootnotes(
-      state.tr,
-      identifier,
-      normalizedIdentifier,
-      label.trim(),
-    );
+    const tr = state.tr;
+    for (const pos of entry?.nodePositions ?? []) {
+      const node = tr.doc.nodeAt(pos);
+      if (!node) continue;
+      tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        identifier: normalizedIdentifier,
+        label: label.trim(),
+      });
+    }
     if (!tr.docChanged) return false;
     dispatch(tr);
     return true;
@@ -123,26 +115,20 @@ export function selectedFootnoteIdentifier(
   return null;
 }
 
-export function footnoteLabelForIdentifier(
-  doc: ProseMirrorNode,
-  identifier: string,
-) {
-  let label = identifier;
-  doc.descendants((node) => {
-    if (
-      isFootnoteNode(node) &&
-      sameIdentifier(node.attrs.identifier, identifier)
-    ) {
-      label = String(node.attrs.label ?? node.attrs.identifier);
-      return false;
-    }
-    return true;
-  });
-  return label;
-}
-
 export function footnoteRenameError(
   doc: ProseMirrorNode,
+  oldIdentifier: string,
+  label: string,
+) {
+  return footnoteRenameErrorForIndex(
+    indexFootnotes(doc),
+    oldIdentifier,
+    label,
+  );
+}
+
+function footnoteRenameErrorForIndex(
+  index: FootnoteIndex,
   oldIdentifier: string,
   label: string,
 ) {
@@ -151,104 +137,20 @@ export function footnoteRenameError(
   if (/[\s[\]]/.test(label.trim())) {
     return "Use a single footnote label without spaces or brackets.";
   }
-  if (hasFootnoteCollision(doc, oldIdentifier, identifier)) {
+  const collision = footnoteEntry(index, identifier);
+  if (
+    collision &&
+    normalizeFootnoteIdentifier(oldIdentifier) !== identifier
+  ) {
     return `A different footnote already uses “${label.trim()}”.`;
   }
   return null;
 }
 
-export function normalizeFootnoteIdentifier(label: string) {
-  return label.trim().replace(/\s+/g, " ").toLowerCase();
-}
-
 function nextFootnoteIdentifier(doc: ProseMirrorNode) {
-  const identifiers = new Set<string>();
-  doc.descendants((node) => {
-    if (isFootnoteNode(node)) {
-      identifiers.add(normalizeFootnoteIdentifier(String(node.attrs.identifier)));
-      identifiers.add(
-        normalizeFootnoteIdentifier(
-          String(node.attrs.label ?? node.attrs.identifier),
-        ),
-      );
-    }
-  });
+  const { occupiedIdentifiers } = indexFootnotes(doc);
 
   let candidate = 1;
-  while (identifiers.has(String(candidate))) candidate += 1;
+  while (occupiedIdentifiers.has(String(candidate))) candidate += 1;
   return String(candidate);
-}
-
-function hasMatchingFootnote(doc: ProseMirrorNode, identifier: string) {
-  let found = false;
-  doc.descendants((node) => {
-    if (isFootnoteNode(node) && sameIdentifier(node.attrs.identifier, identifier)) {
-      found = true;
-      return false;
-    }
-    return true;
-  });
-  return found;
-}
-
-function hasFootnoteCollision(
-  doc: ProseMirrorNode,
-  oldIdentifier: string,
-  newIdentifier: string,
-) {
-  let collision = false;
-  doc.descendants((node) => {
-    if (
-      isFootnoteNode(node) &&
-      !sameIdentifier(node.attrs.identifier, oldIdentifier) &&
-      sameIdentifier(node.attrs.identifier, newIdentifier)
-    ) {
-      collision = true;
-      return false;
-    }
-    return true;
-  });
-  return collision;
-}
-
-function renameMatchingFootnotes(
-  tr: Transaction,
-  oldIdentifier: string,
-  identifier: string,
-  label: string,
-) {
-  const positions: number[] = [];
-  tr.doc.descendants((node, pos) => {
-    if (
-      isFootnoteNode(node) &&
-      sameIdentifier(node.attrs.identifier, oldIdentifier)
-    ) {
-      positions.push(pos);
-    }
-  });
-
-  for (const pos of positions) {
-    const node = tr.doc.nodeAt(pos);
-    if (!node) continue;
-    tr.setNodeMarkup(pos, undefined, {
-      ...node.attrs,
-      identifier,
-      label,
-    });
-  }
-  return tr;
-}
-
-function isFootnoteNode(node: ProseMirrorNode) {
-  return (
-    node.type === gfmSchema.nodes.footnote_reference ||
-    node.type === gfmSchema.nodes.footnote_definition
-  );
-}
-
-function sameIdentifier(left: unknown, right: unknown) {
-  return (
-    normalizeFootnoteIdentifier(String(left)) ===
-    normalizeFootnoteIdentifier(String(right))
-  );
 }

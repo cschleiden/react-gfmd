@@ -33,15 +33,7 @@ import {
   isCurrentListType,
   isInAnyListItem,
 } from "./lists/commands";
-import {
-  footnoteDefinitions,
-  footnoteLabelForIdentifier,
-  footnoteRenameError,
-  insertFootnote,
-  insertFootnoteReference,
-  renameFootnote,
-  selectedFootnoteIdentifier,
-} from "./features/footnotes";
+import { FootnoteToolbar } from "./features/footnotes";
 import { gfmSchema } from "./schema";
 
 interface GFMarkdownToolbarProps {
@@ -200,7 +192,11 @@ export function GFMarkdownToolbar({
         aria-label="Block formatting"
       >
         <HeadingLevelSelect state={state} view={view} />
-        <FootnoteMenu state={state} view={view} />
+        <FootnoteToolbar
+          onCommand={(command) => runCommand(view, command)}
+          state={state}
+          view={view}
+        />
         {blockActions.map((action) => (
           <ToolbarActionButton
             action={action}
@@ -209,114 +205,8 @@ export function GFMarkdownToolbar({
             view={view}
           />
         ))}
-        <RenameFootnoteButton state={state} view={view} />
       </Toolbar.Group>
     </Toolbar.Root>
-  );
-}
-
-function FootnoteMenu({
-  state,
-  view,
-}: {
-  state: EditorState;
-  view: EditorView;
-}) {
-  const definitions = footnoteDefinitions(state.doc);
-  const canInsert = insertFootnote(state, undefined, view);
-
-  return (
-    <Menu.Root modal={false}>
-      <Menu.Trigger
-        aria-label="Insert footnote"
-        className="gfmd-toolbar-button"
-        disabled={!canInsert}
-        title="Insert footnote"
-        type="button"
-      >
-        <span className="gfmd-toolbar-footnote-icon" aria-hidden>[^]</span>
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner sideOffset={4}>
-          <Menu.Popup
-            aria-label="Footnote options"
-            className="gfmd-footnote-menu"
-          >
-            <Menu.Item
-              className="gfmd-footnote-menu-item"
-              onClick={() => runCommand(view, insertFootnote)}
-            >
-              <span>New footnote</span>
-              <small>Create a reference and definition</small>
-            </Menu.Item>
-            {definitions.length ? (
-              <>
-                <Menu.Separator className="gfmd-footnote-menu-separator" />
-                <div className="gfmd-footnote-menu-label">
-                  Reference existing
-                </div>
-                {definitions.map((definition) => (
-                  <Menu.Item
-                    className="gfmd-footnote-menu-item"
-                    key={definition.identifier}
-                    onClick={() =>
-                      runCommand(
-                        view,
-                        insertFootnoteReference(definition.identifier),
-                      )
-                    }
-                  >
-                    <span>[^{definition.label}]</span>
-                    <small>Add another reference</small>
-                  </Menu.Item>
-                ))}
-              </>
-            ) : null}
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
-  );
-}
-
-function RenameFootnoteButton({
-  state,
-  view,
-}: {
-  state: EditorState;
-  view: EditorView;
-}) {
-  const identifier = selectedFootnoteIdentifier(state);
-  if (!identifier) return null;
-
-  return (
-    <Toolbar.Button
-      aria-label="Rename footnote"
-      className="gfmd-toolbar-button gfmd-toolbar-rename-footnote"
-      onClick={() => {
-        const currentLabel = footnoteLabelForIdentifier(state.doc, identifier);
-        const label = globalThis.window?.prompt?.(
-          "Footnote label",
-          currentLabel,
-        );
-        if (label === null || label === undefined) return;
-        const error = footnoteRenameError(view.state.doc, identifier, label);
-        if (error) {
-          globalThis.window?.alert?.(error);
-          return;
-        }
-        if (!renameFootnote(identifier, label)(view.state, view.dispatch, view)) {
-          globalThis.window?.alert?.("The selected footnote no longer exists.");
-          return;
-        }
-        view.focus();
-      }}
-      onMouseDown={(event) => event.preventDefault()}
-      title="Rename footnote"
-      type="button"
-    >
-      <span className="gfmd-toolbar-footnote-icon" aria-hidden>[^]</span>
-    </Toolbar.Button>
   );
 }
 
@@ -518,9 +408,10 @@ function hasInlineFormatting(state: EditorState) {
 
 function runCommand(view: EditorView, command: Command) {
   view.dispatch(closeHistory(view.state.tr));
-  command(view.state, view.dispatch, view);
+  const handled = command(view.state, view.dispatch, view);
   view.dispatch(closeHistory(view.state.tr));
   view.focus();
+  return handled;
 }
 
 function handleToolbarKeyDown(
