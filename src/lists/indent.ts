@@ -1,7 +1,4 @@
-import type {
-  Node as ProseMirrorNode,
-  ResolvedPos,
-} from "prosemirror-model";
+import type { Node as ProseMirrorNode, ResolvedPos } from "prosemirror-model";
 import { Fragment, NodeRange, Slice } from "prosemirror-model";
 import {
   EditorState,
@@ -11,21 +8,12 @@ import {
 } from "prosemirror-state";
 import { canJoin, liftTarget, ReplaceAroundStep } from "prosemirror-transform";
 import type { EditorView } from "prosemirror-view";
-import { isListItemNode, isListNode, selectedListItemPositions } from "./utils";
+import { gfmSchema } from "../schema";
+import { isListItemNode, isListNode } from "./utils";
 
 export function changeListIndent(direction: "indent" | "outdent"): Command {
-  return (state, dispatch, view) => {
-    if (
-      !state.selection.empty &&
-      view &&
-      dispatch &&
-      applyIndentPerSelection(direction, state, dispatch, view)
-    ) {
-      return true;
-    }
-
-    return runListIndentOnce(direction, state, dispatch, view);
-  };
+  return (state, dispatch, view) =>
+    runListIndentOnce(direction, state, dispatch, view);
 }
 
 function runListIndentOnce(
@@ -40,35 +28,6 @@ function runListIndentOnce(
 
   dispatch?.(tr.scrollIntoView());
   return true;
-}
-
-function applyIndentPerSelection(
-  direction: "indent" | "outdent",
-  state: EditorState,
-  dispatch: EditorView["dispatch"],
-  view: EditorView,
-) {
-  const { from, to } = state.selection;
-  const positions = selectedListItemPositions(state)
-    .filter((pos) => pos >= from && pos < to)
-    .sort((a, b) => b - a);
-
-  if (positions.length < 2) return false;
-
-  let changed = false;
-  for (const pos of positions) {
-    const current = view.state;
-    if (pos + 1 >= current.doc.content.size) continue;
-
-    dispatch(
-      current.tr.setSelection(TextSelection.near(current.doc.resolve(pos + 1))),
-    );
-
-    changed =
-      runListIndentOnce(direction, view.state, dispatch, view) || changed;
-  }
-
-  return changed;
 }
 
 function calculateItemRange(selection: EditorState["selection"]) {
@@ -87,21 +46,33 @@ function indentList(tr: Transaction) {
   const previous = findPreviousItem(selectedList, $from, range);
   if (!previous) return false;
 
-  const { previousItem, previousList, previousItemStart } = previous;
-  const { selectedSlice, unselectedSlice } = sliceSelectedItems(
-    tr.doc,
-    $to,
-    range,
-  );
+  const {
+    previousItem,
+    previousList,
+    previousItemStart,
+    previousListStart,
+  } = previous;
+  const selectedSlice = tr.doc.slice(range.start, range.end);
 
   const newPreviousItemContent = previousItem.content
-    .append(Fragment.fromArray([selectedList.copy(selectedSlice.content)]))
-    .append(unselectedSlice ? unselectedSlice.content : Fragment.empty);
+    .append(
+      Fragment.fromArray([
+        copyListForIndent(selectedList, selectedSlice, range.startIndex),
+      ]),
+    );
 
   tr.deleteRange(range.start, range.end);
 
   const previousItemEnd = previousItemStart + previousItem.nodeSize - 2;
-  const newPreviousItem = previousItem.copy(newPreviousItemContent);
+  const requiresLooseNesting =
+    selectedList.type === gfmSchema.nodes.ordered_list;
+  const newPreviousItem = previousItem.type.create(
+    requiresLooseNesting
+      ? { ...previousItem.attrs, spread: true }
+      : previousItem.attrs,
+    newPreviousItemContent,
+    previousItem.marks,
+  );
   newPreviousItem.check();
 
   tr.replaceRangeWith(
@@ -109,6 +80,15 @@ function indentList(tr: Transaction) {
     previousItemEnd + 1,
     newPreviousItem,
   );
+  if (requiresLooseNesting) {
+    const list = tr.doc.nodeAt(previousListStart);
+    if (list) {
+      tr.setNodeMarkup(previousListStart, undefined, {
+        ...list.attrs,
+        tight: list.childCount === 1,
+      });
+    }
+  }
 
   tr.setSelection(
     previousList === selectedList
@@ -122,6 +102,30 @@ function indentList(tr: Transaction) {
   return true;
 }
 
+function copyListForIndent(
+  list: ProseMirrorNode,
+  slice: Slice,
+  startIndex: number,
+) {
+  const items: ProseMirrorNode[] = [];
+  slice.content.forEach((item) => items.push(item));
+  const tight = items.length === 1 ? true : list.attrs.tight;
+
+  const attrs =
+    list.type === gfmSchema.nodes.ordered_list
+      ? {
+          ...list.attrs,
+          order: Number(list.attrs.order) + startIndex,
+          tight,
+        }
+      : { ...list.attrs, tight };
+
+  return list.type.createChecked(
+    attrs,
+    Fragment.fromArray(items),
+  );
+}
+
 function findPreviousItem(
   selectedList: ProseMirrorNode,
   $from: ResolvedPos,
@@ -130,12 +134,14 @@ function findPreviousItem(
   let previousItem: ProseMirrorNode;
   let previousList: ProseMirrorNode;
   let previousItemStart: number;
+  let previousListStart: number;
 
   const doc = $from.doc;
 
   if (range.startIndex >= 1) {
     previousItem = selectedList.child(range.startIndex - 1);
     previousList = selectedList;
+    previousListStart = $from.before(range.depth);
     previousItemStart = doc.resolve(range.start).start(range.depth) + 1;
 
     for (let i = 0; i < range.startIndex - 1; i += 1) {
@@ -150,14 +156,14 @@ function findPreviousItem(
     previousList = listParent.child(listIndex - 1);
     if (!isListNode(previousList)) return false;
 
-    let previousListStart = listParentStart + 1;
+    previousListStart = listParentStart;
     for (let i = 0; i < listIndex - 1; i += 1) {
       previousListStart += listParent.child(i).nodeSize;
     }
 
     previousItem = previousList.child(previousList.childCount - 1);
     previousItemStart =
-      previousListStart + previousList.nodeSize - previousItem.nodeSize - 1;
+      previousListStart + previousList.nodeSize - previousItem.nodeSize;
 
     if (!isListItemNode(previousItem)) return false;
   }
@@ -166,29 +172,7 @@ function findPreviousItem(
     previousItem,
     previousList,
     previousItemStart,
-  };
-}
-
-function sliceSelectedItems(
-  doc: ProseMirrorNode,
-  $to: ResolvedPos,
-  range: NodeRange,
-) {
-  const start = range.start;
-  const mid =
-    $to.depth >= range.depth + 2 ? $to.end(range.depth + 2) : range.end - 1;
-  const end = range.end;
-
-  if (mid + 1 >= end) {
-    return {
-      selectedSlice: doc.slice(start, end),
-      unselectedSlice: null,
-    };
-  }
-
-  return {
-    selectedSlice: doc.slice(start, mid),
-    unselectedSlice: doc.slice(mid + 1, end - 1),
+    previousListStart,
   };
 }
 
@@ -198,6 +182,7 @@ function dedentList(tr: Transaction) {
 
   const parent = findParentItem(tr.selection.$from, range);
   if (!parent) return false;
+  const parentItemPos = range.$from.before(range.depth - 1);
 
   range = indentSiblingsOfItems(tr, range);
   range = indentSiblingsOfList(tr, range);
@@ -212,8 +197,21 @@ function dedentList(tr: Transaction) {
   if (range) {
     maybeJoinList(tr, tr.doc.resolve(range.end - 2));
   }
+  normalizeSingleBlockItemSpread(tr, tr.mapping.map(parentItemPos));
 
   return true;
+}
+
+function normalizeSingleBlockItemSpread(tr: Transaction, pos: number) {
+  const item = tr.doc.nodeAt(pos);
+  if (
+    item &&
+    isListItemNode(item) &&
+    item.childCount === 1 &&
+    item.attrs.spread
+  ) {
+    tr.setNodeMarkup(pos, undefined, { ...item.attrs, spread: false });
+  }
 }
 
 function findParentItem($from: ResolvedPos, range: NodeRange) {

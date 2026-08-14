@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { closeHistory, undo } from "prosemirror-history";
+import { closeHistory, redo, undo } from "prosemirror-history";
 import { TextSelection, type EditorState, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { describe, expect, it, vi } from "vitest";
@@ -265,6 +265,205 @@ Body
 
 1. second
 2. third`);
+  });
+
+  it("preserves task state and descendants during list container conversion", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: `- anchor
+- [x] selected
+
+  3. descendant
+
+- [ ] selected two
+- tail`,
+    });
+    const originalDoc = state.doc.toJSON();
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(
+          state.doc,
+          findTextPosition(state, "selected"),
+          findTextPosition(state, "selected two") + 12,
+        ),
+      ),
+    );
+    const selectedText = state.doc.textBetween(
+      state.selection.from,
+      state.selection.to,
+      " ",
+    );
+
+    expect(
+      changeListType("ordered")(
+        state,
+        (transaction) => {
+          state = state.apply(transaction);
+        },
+        undefined,
+      ),
+    ).toBe(true);
+
+    expect(state.doc.childCount).toBe(3);
+    const converted = state.doc.child(1);
+    expect(converted.type.name).toBe("ordered_list");
+    expect(converted.childCount).toBe(2);
+    expect(converted.child(0).type.name).toBe("task_list_item");
+    expect(converted.child(0).attrs.checked).toBe(true);
+    expect(converted.child(0).lastChild?.type.name).toBe("ordered_list");
+    expect(converted.child(0).lastChild?.attrs.order).toBe(3);
+    expect(converted.child(1).type.name).toBe("task_list_item");
+    expect(converted.child(1).attrs.checked).toBe(false);
+    expect(
+      state.doc.textBetween(state.selection.from, state.selection.to, " "),
+    ).toBe(selectedText);
+    expect(
+      createGFMarkdownState({
+        context,
+        value: serializeMarkdown(state.doc),
+      }).doc.toJSON(),
+    ).toEqual(state.doc.toJSON());
+    const convertedDoc = state.doc.toJSON();
+
+    expect(
+      undo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(state.doc.toJSON()).toEqual(originalDoc);
+    expect(
+      redo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(state.doc.toJSON()).toEqual(convertedDoc);
+  });
+
+  it("continues ordered numbering after converting a middle selection", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: `4. first
+5. second
+6. third`,
+    });
+    const secondPos = findTextPosition(state, "second");
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, secondPos + 1)),
+    );
+
+    expect(
+      changeListType("bullet")(
+        state,
+        (transaction) => {
+          state = state.apply(transaction);
+        },
+        undefined,
+      ),
+    ).toBe(true);
+
+    expect(state.doc.child(0).attrs.order).toBe(4);
+    expect(state.doc.child(1).type.name).toBe("bullet_list");
+    expect(state.doc.child(2).attrs.order).toBe(6);
+    expect(serializeMarkdown(state.doc)).toBe(`4. first
+
+- second
+
+6. third`);
+  });
+
+  it("converts the enclosing list when a selection crosses nested levels", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: `- parent
+  - nested
+- [x] tail`,
+    });
+    const originalDoc = state.doc.toJSON();
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(
+          state.doc,
+          findTextPosition(state, "nested"),
+          findTextPosition(state, "tail") + 4,
+        ),
+      ),
+    );
+    const selectedText = state.doc.textBetween(
+      state.selection.from,
+      state.selection.to,
+      " ",
+    );
+
+    expect(
+      changeListType("ordered")(
+        state,
+        (transaction) => {
+          state = state.apply(transaction);
+        },
+        undefined,
+      ),
+    ).toBe(true);
+
+    const list = state.doc.firstChild;
+    expect(list?.type.name).toBe("ordered_list");
+    expect(list?.childCount).toBe(2);
+    expect(list?.firstChild?.lastChild?.type.name).toBe("bullet_list");
+    expect(list?.child(1).type.name).toBe("task_list_item");
+    expect(list?.child(1).attrs.checked).toBe(true);
+    expect(
+      state.doc.textBetween(state.selection.from, state.selection.to, " "),
+    ).toBe(selectedText);
+    expect(
+      createGFMarkdownState({
+        context,
+        value: serializeMarkdown(state.doc),
+      }).doc.toJSON(),
+    ).toEqual(state.doc.toJSON());
+
+    expect(
+      undo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(state.doc.toJSON()).toEqual(originalDoc);
+  });
+
+  it("converts selected tasks to plain items without losing descendants", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: `- [x] task
+
+  3. descendant
+
+- [ ] other`,
+    });
+    const taskPos = findTextPosition(state, "task");
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, taskPos + 1)),
+    );
+
+    expect(
+      changeListType("bullet")(
+        state,
+        (transaction) => {
+          state = state.apply(transaction);
+        },
+        undefined,
+      ),
+    ).toBe(true);
+
+    const list = state.doc.firstChild;
+    expect(list?.firstChild?.type.name).toBe("list_item");
+    expect(list?.firstChild?.lastChild?.type.name).toBe("ordered_list");
+    expect(list?.firstChild?.lastChild?.attrs.order).toBe(3);
+    expect(list?.child(1).type.name).toBe("task_list_item");
+    expect(list?.child(1).attrs.checked).toBe(false);
+    expect(
+      createGFMarkdownState({
+        context,
+        value: serializeMarkdown(state.doc),
+      }).doc.toJSON(),
+    ).toEqual(state.doc.toJSON());
   });
 
   it("changes the current task item into a plain list item", () => {
@@ -727,6 +926,91 @@ Body
         value: serializeMarkdown(state.doc),
       }).doc.toJSON(),
     ).toEqual(state.doc.toJSON());
+  });
+
+  it("indents and outdents a mixed multi-item selection as sibling items", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: `- anchor
+- [x] second
+
+  3. descendant
+
+- third
+- [ ] fourth
+- tail`,
+    });
+    const originalDoc = state.doc.toJSON();
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(
+          state.doc,
+          findTextPosition(state, "second"),
+          findTextPosition(state, "fourth") + 6,
+        ),
+      ),
+    );
+    const selectedText = state.doc.textBetween(
+      state.selection.from,
+      state.selection.to,
+      " ",
+    );
+    const view = {
+      get state() {
+        return state;
+      },
+      dispatch(transaction: Transaction) {
+        state = state.apply(transaction);
+      },
+    } as unknown as EditorView;
+
+    expect(
+      changeListIndent("indent")(state, view.dispatch.bind(view), view),
+    ).toBe(true);
+
+    const rootList = state.doc.firstChild;
+    const nestedList = rootList?.firstChild?.lastChild;
+    expect(rootList?.childCount).toBe(2);
+    expect(nestedList?.type.name).toBe("bullet_list");
+    expect(nestedList?.childCount).toBe(3);
+    expect(nestedList?.child(0).type.name).toBe("task_list_item");
+    expect(nestedList?.child(0).attrs.checked).toBe(true);
+    expect(nestedList?.child(0).lastChild?.type.name).toBe("ordered_list");
+    expect(nestedList?.child(0).lastChild?.attrs.order).toBe(3);
+    expect(nestedList?.child(2).type.name).toBe("task_list_item");
+    expect(nestedList?.child(2).attrs.checked).toBe(false);
+    expect(
+      state.doc.textBetween(state.selection.from, state.selection.to, " "),
+    ).toBe(selectedText);
+    expect(
+      createGFMarkdownState({
+        context,
+        value: serializeMarkdown(state.doc),
+      }).doc.toJSON(),
+    ).toEqual(state.doc.toJSON());
+
+    const indentedDoc = state.doc.toJSON();
+    state = state.apply(closeHistory(state.tr));
+    expect(
+      changeListIndent("outdent")(state, view.dispatch.bind(view), view),
+    ).toBe(true);
+    expect(state.doc.toJSON()).toEqual(originalDoc);
+    expect(
+      state.doc.textBetween(state.selection.from, state.selection.to, " "),
+    ).toBe(selectedText);
+
+    expect(
+      undo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(state.doc.toJSON()).toEqual(indentedDoc);
+    expect(
+      undo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(state.doc.toJSON()).toEqual(originalDoc);
   });
 });
 

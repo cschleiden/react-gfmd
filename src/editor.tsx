@@ -18,6 +18,7 @@ import type {
   CreateGFMarkdownStateOptions,
   GFMarkdownEditorProps,
 } from "./editor-types";
+import { createMarkdownClipboardPlugin } from "./clipboard";
 import { CodeBlockNodeView } from "./features/code-block";
 import { createMarkdownInputRules } from "./input-rules";
 import { changeListIndent } from "./lists/commands";
@@ -134,6 +135,7 @@ function createPlugins(options: CreateGFMarkdownStateOptions): Plugin[] {
       "Mod-`": toggleMark(gfmSchema.marks.code),
     }),
     keymap(baseKeymap),
+    createMarkdownClipboardPlugin(),
     createTaskListPlugin(),
     inputRules({
       rules: createMarkdownInputRules(),
