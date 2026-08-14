@@ -21,6 +21,7 @@ import type {
 import { createMarkdownClipboardPlugin } from "./clipboard";
 import { CodeBlockNodeView } from "./features/code-block";
 import {
+  createFootnotePlugin,
   FootnoteDefinitionNodeView,
   FootnoteReferenceNodeView,
 } from "./features/footnotes";
@@ -141,6 +142,7 @@ function createPlugins(options: CreateGFMarkdownStateOptions): Plugin[] {
     keymap(baseKeymap),
     createMarkdownClipboardPlugin(),
     createTaskListPlugin(),
+    createFootnotePlugin(),
     inputRules({
       rules: createMarkdownInputRules(),
     }),

@@ -159,6 +159,11 @@ Body
       "[^note]Existing[^note].",
     );
     expect(onChange.mock.lastCall?.[0].match(/\[\^note\]:/g)).toHaveLength(1);
+    expect(
+      screen.getByRole("button", {
+        name: "Go to reference 2 of 2 for footnote note",
+      }),
+    ).toBeTruthy();
   });
 
   it("synchronizes definition label edits across multiple references", () => {

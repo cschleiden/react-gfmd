@@ -12,3 +12,4 @@ export {
   FootnoteDefinitionNodeView,
   FootnoteReferenceNodeView,
 } from "./node-views";
+export { createFootnotePlugin } from "./plugin";
