@@ -1,4 +1,8 @@
-import type { Node as ProseMirrorNode, NodeType } from "prosemirror-model";
+import type {
+  Node as ProseMirrorNode,
+  NodeType,
+  ResolvedPos,
+} from "prosemirror-model";
 import type { EditorState } from "prosemirror-state";
 import { gfmSchema } from "../schema";
 
@@ -20,6 +24,13 @@ export function isListNode(node: ProseMirrorNode) {
 
 export function isListItemNode(node: ProseMirrorNode) {
   return isListItemType(node.type);
+}
+
+export function nearestListItemDepth($pos: ResolvedPos) {
+  for (let depth = $pos.depth - 1; depth > 0; depth -= 1) {
+    if (isListItemType($pos.node(depth).type)) return depth;
+  }
+  return -1;
 }
 
 export function currentListContainerContext(state: EditorState) {
