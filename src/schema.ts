@@ -74,6 +74,7 @@ export const gfmSchema = new Schema({
         parseDOM: [
           {
             tag: "sup[data-gfmd-footnote-reference]",
+            priority: 100,
             getAttrs: (node) =>
               nodeAttrs(node, "data-identifier", "data-label"),
           },
@@ -84,6 +85,7 @@ export const gfmSchema = new Schema({
             "data-gfmd-footnote-reference": "",
             "data-identifier": node.attrs.identifier,
             "data-label": node.attrs.label,
+            "aria-label": `Footnote ${node.attrs.label ?? node.attrs.identifier}`,
           },
           `[^${node.attrs.label ?? node.attrs.identifier}]`,
         ],
@@ -157,6 +159,7 @@ function blockContainerNode(tag: string, markerAttr: string): NodeSpec {
     parseDOM: [
       {
         tag: `${tag}[${markerAttr}]`,
+        priority: 100,
         getAttrs: (node) => nodeAttrs(node, "data-identifier", "data-label"),
       },
     ],
@@ -166,6 +169,7 @@ function blockContainerNode(tag: string, markerAttr: string): NodeSpec {
         [markerAttr]: "",
         "data-identifier": node.attrs.identifier,
         "data-label": node.attrs.label,
+        "aria-label": `Footnote ${node.attrs.label ?? node.attrs.identifier} definition`,
       },
       0,
     ],

@@ -20,6 +20,10 @@ import type {
 } from "./editor-types";
 import { createMarkdownClipboardPlugin } from "./clipboard";
 import { CodeBlockNodeView } from "./features/code-block";
+import {
+  FootnoteDefinitionNodeView,
+  FootnoteReferenceNodeView,
+} from "./features/footnotes";
 import { createMarkdownInputRules } from "./input-rules";
 import { changeListIndent } from "./lists/commands";
 import {
@@ -153,6 +157,16 @@ function createNodeViews(
       view: EditorView,
       getPos: () => number | undefined,
     ) => new CodeBlockNodeView(node, view, getPos),
+    footnote_reference: (
+      node: ProseMirrorNode,
+      view: EditorView,
+      getPos: () => number | undefined,
+    ) => new FootnoteReferenceNodeView(node, view, getPos),
+    footnote_definition: (
+      node: ProseMirrorNode,
+      view: EditorView,
+      getPos: () => number | undefined,
+    ) => new FootnoteDefinitionNodeView(node, view, getPos),
   };
 }
 

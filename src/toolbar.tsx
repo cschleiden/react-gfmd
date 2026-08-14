@@ -33,6 +33,13 @@ import {
   isCurrentListType,
   isInAnyListItem,
 } from "./lists/commands";
+import {
+  footnoteLabelForIdentifier,
+  footnoteRenameError,
+  insertFootnote,
+  renameFootnote,
+  selectedFootnoteIdentifier,
+} from "./features/footnotes";
 import { gfmSchema } from "./schema";
 
 interface GFMarkdownToolbarProps {
@@ -96,6 +103,12 @@ const markActions: ToolbarAction[] = [
 ];
 
 const blockActions: ToolbarAction[] = [
+  {
+    id: "footnote",
+    icon: <span className="gfmd-toolbar-footnote-icon" aria-hidden>[^]</span>,
+    title: "Insert footnote",
+    command: insertFootnote,
+  },
   {
     id: "quote",
     icon: <Quote className="gfmd-toolbar-icon" size={16} />,
@@ -199,8 +212,50 @@ export function GFMarkdownToolbar({
             view={view}
           />
         ))}
+        <RenameFootnoteButton state={state} view={view} />
       </Toolbar.Group>
     </Toolbar.Root>
+  );
+}
+
+function RenameFootnoteButton({
+  state,
+  view,
+}: {
+  state: EditorState;
+  view: EditorView;
+}) {
+  const identifier = selectedFootnoteIdentifier(state);
+  if (!identifier) return null;
+
+  return (
+    <Toolbar.Button
+      aria-label="Rename footnote"
+      className="gfmd-toolbar-button gfmd-toolbar-rename-footnote"
+      onClick={() => {
+        const currentLabel = footnoteLabelForIdentifier(state.doc, identifier);
+        const label = globalThis.window?.prompt?.(
+          "Footnote label",
+          currentLabel,
+        );
+        if (label === null || label === undefined) return;
+        const error = footnoteRenameError(view.state.doc, identifier, label);
+        if (error) {
+          globalThis.window?.alert?.(error);
+          return;
+        }
+        if (!renameFootnote(identifier, label)(view.state, view.dispatch, view)) {
+          globalThis.window?.alert?.("The selected footnote no longer exists.");
+          return;
+        }
+        view.focus();
+      }}
+      onMouseDown={(event) => event.preventDefault()}
+      title="Rename footnote"
+      type="button"
+    >
+      <span className="gfmd-toolbar-footnote-icon" aria-hidden>[^]</span>
+    </Toolbar.Button>
   );
 }
 
@@ -325,6 +380,7 @@ function ToolbarActionButton({
 
   return (
     <Toolbar.Button
+      aria-label={action.title}
       aria-pressed={active}
       className="gfmd-toolbar-button"
       data-active={active ? "" : undefined}
