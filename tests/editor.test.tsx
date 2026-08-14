@@ -249,12 +249,34 @@ Body
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Go to reference for footnote note",
+        name: "Go to reference 1 of 1 for footnote note",
       }),
     );
     expect(
       document.querySelector(".gfmd-footnote-reference[data-selected]"),
     ).toBeTruthy();
+  });
+
+  it("lists compact navigation controls for every footnote reference", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={"First[^note], second[^note].\n\n[^note]: Body."}
+      />,
+    );
+
+    const first = screen.getByRole("button", {
+      name: "Go to reference 1 of 2 for footnote note",
+    });
+    const second = screen.getByRole("button", {
+      name: "Go to reference 2 of 2 for footnote note",
+    });
+    expect(first.textContent).toBe("1");
+    expect(second.textContent).toBe("2");
+    fireEvent.click(second);
+    fireEvent.click(second);
+    const references = document.querySelectorAll(".gfmd-footnote-reference");
+    expect(references[1]?.hasAttribute("data-selected")).toBe(true);
   });
 
   it("preserves explicit orphan references and definitions on deletion", () => {

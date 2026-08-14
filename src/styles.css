@@ -323,25 +323,38 @@
   border-color: var(--gfmd-danger);
 }
 
-.gfmd-footnote-backreference {
+.gfmd-footnote-backreferences {
   margin-left: auto;
-  padding: 3px 6px;
-  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.gfmd-footnote-backreferences-label {
+  margin-right: 2px;
+  color: var(--gfmd-muted-fg);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.gfmd-footnote-backreference {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 5px;
+  border: 1px solid var(--gfmd-border);
   border-radius: 4px;
-  background: transparent;
+  background: var(--gfmd-canvas);
   color: var(--gfmd-accent);
   font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
 }
 
-.gfmd-footnote-backreference:hover:not(:disabled) {
-  border-color: var(--gfmd-border);
+.gfmd-footnote-backreference:hover {
+  border-color: color-mix(in srgb, var(--gfmd-border) 50%, var(--gfmd-accent));
   background: var(--gfmd-subtle);
-}
-
-.gfmd-footnote-backreference:disabled {
-  color: var(--gfmd-muted-fg);
-  cursor: not-allowed;
 }
 
 .gfmd-footnote-definition-content {

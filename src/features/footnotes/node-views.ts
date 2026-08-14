@@ -110,7 +110,7 @@ export class FootnoteDefinitionNodeView implements NodeView {
   contentDOM: HTMLElement;
   private header: HTMLElement;
   private labelInput: HTMLInputElement;
-  private backButton: HTMLButtonElement;
+  private backReferences: HTMLElement;
   private status: HTMLElement;
 
   constructor(
@@ -137,16 +137,14 @@ export class FootnoteDefinitionNodeView implements NodeView {
     this.labelInput.addEventListener("change", this.commitLabel);
     this.labelInput.addEventListener("keydown", this.handleLabelKeyDown);
 
-    this.backButton = document.createElement("button");
-    this.backButton.className = "gfmd-footnote-backreference";
-    this.backButton.type = "button";
-    this.backButton.addEventListener("click", this.navigateToReference);
+    this.backReferences = document.createElement("nav");
+    this.backReferences.className = "gfmd-footnote-backreferences";
 
     this.status = document.createElement("span");
     this.status.className = "gfmd-visually-hidden";
     this.status.setAttribute("aria-live", "polite");
 
-    this.header.append(marker, this.labelInput, this.backButton, this.status);
+    this.header.append(marker, this.labelInput, this.backReferences, this.status);
     this.contentDOM = document.createElement("div");
     this.contentDOM.className = "gfmd-footnote-definition-content";
     this.dom.append(this.header, this.contentDOM);
@@ -171,7 +169,6 @@ export class FootnoteDefinitionNodeView implements NodeView {
   destroy() {
     this.labelInput.removeEventListener("change", this.commitLabel);
     this.labelInput.removeEventListener("keydown", this.handleLabelKeyDown);
-    this.backButton.removeEventListener("click", this.navigateToReference);
   }
 
   private commitLabel = () => {
@@ -204,28 +201,18 @@ export class FootnoteDefinitionNodeView implements NodeView {
     }
   };
 
-  private navigateToReference = () => {
-    const referencePos = findFootnotePosition(
-      this.view.state.doc,
-      "footnote_reference",
-      String(this.node.attrs.identifier),
-    );
-    if (referencePos === null) {
-      this.status.textContent = `Footnote ${displayLabel(this.node)} has no references.`;
-      return;
-    }
-
+  private navigateToReference(referencePos: number) {
     this.view.dispatch(
       this.view.state.tr
         .setSelection(NodeSelection.create(this.view.state.doc, referencePos))
         .scrollIntoView(),
     );
     this.view.focus();
-  };
+  }
 
   private render() {
     const label = displayLabel(this.node);
-    const referenceCount = countFootnoteReferences(
+    const referencePositions = findFootnoteReferencePositions(
       this.view.state.doc,
       String(this.node.attrs.identifier),
     );
@@ -236,17 +223,35 @@ export class FootnoteDefinitionNodeView implements NodeView {
     }
     this.labelInput.setAttribute("aria-label", `Footnote ${label} label`);
     this.labelInput.title = "Edit footnote label";
-    this.backButton.textContent =
-      referenceCount === 1
-        ? "Go to reference"
-        : `Go to first of ${referenceCount} references`;
-    this.backButton.disabled = referenceCount === 0;
-    this.backButton.setAttribute(
+    this.renderBackReferences(label, referencePositions);
+  }
+
+  private renderBackReferences(label: string, positions: number[]) {
+    this.backReferences.replaceChildren();
+    this.backReferences.setAttribute(
       "aria-label",
-      referenceCount
-        ? `Go to reference for footnote ${label}`
-        : `Footnote ${label} has no references`,
+      `References to footnote ${label}`,
     );
+
+    const heading = document.createElement("span");
+    heading.className = "gfmd-footnote-backreferences-label";
+    heading.textContent = positions.length ? "Refs" : "No refs";
+    this.backReferences.append(heading);
+
+    positions.forEach((pos, index) => {
+      const ordinal = index + 1;
+      const button = document.createElement("button");
+      button.className = "gfmd-footnote-backreference";
+      button.type = "button";
+      button.textContent = String(ordinal);
+      button.title = `Go to reference ${ordinal}`;
+      button.setAttribute(
+        "aria-label",
+        `Go to reference ${ordinal} of ${positions.length} for footnote ${label}`,
+      );
+      button.addEventListener("click", () => this.navigateToReference(pos));
+      this.backReferences.append(button);
+    });
   }
 }
 
@@ -269,17 +274,20 @@ function findFootnotePosition(
   return found;
 }
 
-function countFootnoteReferences(doc: ProseMirrorNode, identifier: string) {
-  let count = 0;
-  doc.descendants((node) => {
+function findFootnoteReferencePositions(
+  doc: ProseMirrorNode,
+  identifier: string,
+) {
+  const positions: number[] = [];
+  doc.descendants((node, pos) => {
     if (
       node.type.name === "footnote_reference" &&
       sameIdentifier(node.attrs.identifier, identifier)
     ) {
-      count += 1;
+      positions.push(pos);
     }
   });
-  return count;
+  return positions;
 }
 
 function sameIdentifier(left: unknown, right: unknown) {
