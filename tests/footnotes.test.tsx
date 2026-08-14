@@ -191,6 +191,11 @@ describe("footnote editing", () => {
     expect(
       document.querySelector(".gfmd-footnote-reference[data-selected]"),
     ).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", {
+        name: "Footnote note; go to definition",
+      }),
+    );
   });
 
   it("selects only the reference marker when navigating back", () => {

@@ -211,13 +211,18 @@ export class FootnoteDefinitionNodeView implements NodeView {
         ),
       ),
     );
-    this.view.focus();
     const referenceDOM = this.view.nodeDOM(referencePos);
-    if (
-      referenceDOM instanceof HTMLElement &&
-      typeof referenceDOM.scrollIntoView === "function"
-    ) {
-      referenceDOM.scrollIntoView({ block: "nearest" });
+    if (referenceDOM instanceof HTMLElement) {
+      const referenceButton =
+        referenceDOM.querySelector<HTMLButtonElement>(
+          ".gfmd-footnote-reference-button",
+        );
+      referenceButton?.focus({ preventScroll: true });
+      if (typeof referenceDOM.scrollIntoView === "function") {
+        referenceDOM.scrollIntoView({ block: "nearest" });
+      }
+    } else {
+      this.view.focus();
     }
   }
 
