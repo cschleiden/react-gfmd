@@ -28,10 +28,13 @@ export function currentListContainerContext(state: EditorState) {
   for (let depth = $from.depth; depth > 0; depth -= 1) {
     const node = $from.node(depth);
     if (isListNode(node)) {
+      const pos = $from.before(depth);
+      if (state.selection.to > pos + node.nodeSize) continue;
+
       return {
         depth,
         node,
-        pos: $from.before(depth),
+        pos,
         parentDepth: depth - 1,
         parent: $from.node(depth - 1),
         index: $from.index(depth - 1),
