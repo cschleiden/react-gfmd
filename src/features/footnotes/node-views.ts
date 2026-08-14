@@ -203,11 +203,22 @@ export class FootnoteDefinitionNodeView implements NodeView {
 
   private navigateToReference(referencePos: number) {
     this.view.dispatch(
-      this.view.state.tr
-        .setSelection(NodeSelection.create(this.view.state.doc, referencePos))
-        .scrollIntoView(),
+      this.view.state.tr.setSelection(
+        TextSelection.create(
+          this.view.state.doc,
+          referencePos,
+          referencePos + 1,
+        ),
+      ),
     );
     this.view.focus();
+    const referenceDOM = this.view.nodeDOM(referencePos);
+    if (
+      referenceDOM instanceof HTMLElement &&
+      typeof referenceDOM.scrollIntoView === "function"
+    ) {
+      referenceDOM.scrollIntoView({ block: "nearest" });
+    }
   }
 
   private render() {

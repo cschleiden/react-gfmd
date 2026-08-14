@@ -1,7 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { undo } from "prosemirror-history";
 import { DOMParser, DOMSerializer } from "prosemirror-model";
-import { TextSelection, type EditorState } from "prosemirror-state";
+import {
+  TextSelection,
+  type EditorState,
+  type Transaction,
+} from "prosemirror-state";
+import type { EditorView } from "prosemirror-view";
 import { describe, expect, it, vi } from "vitest";
 import {
   createGFMarkdownState,
@@ -12,6 +17,7 @@ import {
   renameFootnote,
   serializeMarkdown,
 } from "../src";
+import { FootnoteDefinitionNodeView } from "../src/features/footnotes";
 
 const context = { owner: "cschleiden", repo: "react-gfmd" };
 
@@ -184,7 +190,38 @@ describe("footnote editing", () => {
     );
     expect(
       document.querySelector(".gfmd-footnote-reference[data-selected]"),
-    ).toBeTruthy();
+    ).toBeNull();
+  });
+
+  it("selects only the reference marker when navigating back", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "See[^note].\n\n[^note]: Body.",
+    });
+    const referencePos = findNodePosition(state, "footnote_reference");
+    const definitionPos = findNodePosition(state, "footnote_definition");
+    const definition = state.doc.nodeAt(definitionPos);
+    expect(definition).not.toBeNull();
+
+    const view = {
+      get state() {
+        return state;
+      },
+      dispatch(transaction: Transaction) {
+        state = state.apply(transaction);
+      },
+      focus: vi.fn(),
+      nodeDOM: vi.fn(() => null),
+    } as unknown as EditorView;
+    const nodeView = new FootnoteDefinitionNodeView(definition!, view);
+    const backReference = nodeView.dom.querySelector<HTMLButtonElement>(
+      ".gfmd-footnote-backreference",
+    );
+    backReference?.click();
+
+    expect(state.selection).toBeInstanceOf(TextSelection);
+    expect(state.selection.from).toBe(referencePos);
+    expect(state.selection.to).toBe(referencePos + 1);
   });
 
   it("lists a compact navigation control for every reference", () => {
@@ -206,7 +243,11 @@ describe("footnote editing", () => {
 
     fireEvent.click(second);
     const references = document.querySelectorAll(".gfmd-footnote-reference");
-    expect(references[1]?.hasAttribute("data-selected")).toBe(true);
+    expect(
+      Array.from(references).some((reference) =>
+        reference.hasAttribute("data-selected"),
+      ),
+    ).toBe(false);
   });
 
   it("preserves explicit orphans when either side is deleted", () => {

@@ -105,6 +105,16 @@ export function selectedFootnoteIdentifier(
     return String(state.selection.node.attrs.identifier);
   }
 
+  if (state.selection instanceof TextSelection) {
+    const node = state.doc.nodeAt(state.selection.from);
+    if (
+      node?.type === gfmSchema.nodes.footnote_reference &&
+      state.selection.to === state.selection.from + node.nodeSize
+    ) {
+      return String(node.attrs.identifier);
+    }
+  }
+
   const { $from } = state.selection;
   for (let depth = $from.depth; depth > 0; depth -= 1) {
     const node = $from.node(depth);
