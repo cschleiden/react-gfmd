@@ -48,6 +48,7 @@ import { gfmSchema } from "./schema";
 
 const subscriptInlineTokenPattern = /@@GFMD_SUB\((.*?)\)@@/;
 const superscriptInlineTokenPattern = /@@GFMD_SUP\((.*?)\)@@/;
+const emptyTaskToken = "GFMD9EMPTYTASK9TOKEN";
 const inlineTokenPattern = new RegExp(
   `${subscriptInlineTokenPattern.source}|${superscriptInlineTokenPattern.source}`,
   "g",
@@ -74,7 +75,10 @@ const markdownHandlers = {
     ),
   thematicBreak: () => gfmSchema.nodes.horizontal_rule.create(),
   break: () => gfmSchema.nodes.hard_break.create(),
-  text: (node: Text) => parseInlineText(node.value.replace(/\n/g, " ")),
+  text: (node: Text) =>
+    parseInlineText(
+      node.value.replaceAll(emptyTaskToken, "").replace(/\n/g, " "),
+    ),
   inlineCode: parseInlineCode,
   image: imageNode,
   imageReference: parseImageReference,
@@ -142,10 +146,7 @@ const proseMirrorNodeHandlers: FromProseMirrorOptions<
     checked: null,
     spread: node.attrs.spread,
   })),
-  task_list_item: fromPmNode("listItem", (node) => ({
-    checked: node.attrs.checked,
-    spread: node.attrs.spread,
-  })),
+  task_list_item: taskListItemToMdast,
   code_block: (node) => ({
     type: "code",
     lang: node.attrs.language,
@@ -220,8 +221,9 @@ const summaryParser = unified().use(remarkParse).use(remarkGfm);
 
 export function parseWithRemark(markdown: string) {
   const normalizedMarkdown = markdown.replace(/\r\n?/g, "\n");
-  return markdownParser.processSync(encodeInlineHtmlMarks(normalizedMarkdown))
-    .result as ProseMirrorNode;
+  return markdownParser.processSync(
+    encodeInlineHtmlMarks(encodeEmptyTaskItems(normalizedMarkdown)),
+  ).result as ProseMirrorNode;
 }
 
 export function serializeWithRemark(doc: ProseMirrorNode) {
@@ -335,6 +337,29 @@ function rawMarkdownToMdast(node: ProseMirrorNode): Html {
   return {
     type: "html",
     value: String(node.attrs.value),
+  };
+}
+
+function taskListItemToMdast(
+  node: ProseMirrorNode,
+  _parent: ProseMirrorNode | undefined,
+  state: FromProseMirrorState,
+): ListItem {
+  const children = state.all(node);
+  const firstChild = children[0];
+
+  if (
+    firstChild?.type === "paragraph" &&
+    firstChild.children.length === 0
+  ) {
+    firstChild.children.push({ type: "text", value: emptyTaskToken });
+  }
+
+  return {
+    type: "listItem",
+    checked: node.attrs.checked,
+    spread: node.attrs.spread,
+    children: children as ListItem["children"],
   };
 }
 
@@ -507,6 +532,13 @@ function encodeInlineHtmlMarks(markdown: string) {
     );
 }
 
+function encodeEmptyTaskItems(markdown: string) {
+  return markdown.replace(
+    /^([ \t]*(?:[-+*]|\d+[.)])[ \t]+\[[ xX]\])(?=[ \t]*$)/gm,
+    `$1 ${emptyTaskToken}`,
+  );
+}
+
 function encodeInlineStylePayload(value: string) {
   return encodeURIComponent(value);
 }
@@ -527,5 +559,7 @@ function escapeHtml(value: string) {
 }
 
 function restoreEscapedCustomTokens(markdown: string) {
-  return markdown.replace(/\\#(?=\d)/g, "#");
+  return markdown
+    .replace(new RegExp(`[ \\t]*${emptyTaskToken}(?=\\n|$)`, "g"), "")
+    .replace(/\\#(?=\d)/g, "#");
 }

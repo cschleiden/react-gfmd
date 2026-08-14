@@ -136,6 +136,16 @@ const value = 1;
     expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
   });
 
+  it("preserves empty task items through serialization", () => {
+    const markdown = "- [ ]";
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+
+    expect(doc.firstChild?.firstChild?.type.name).toBe("task_list_item");
+    expect(serialized).toBe(markdown);
+    expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
+  });
+
   it("round-trips footnotes through remark-gfm", () => {
     const markdown = `See note[^1].
 

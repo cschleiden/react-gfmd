@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { undo } from "prosemirror-history";
+import { closeHistory, undo } from "prosemirror-history";
 import { TextSelection, type EditorState, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { describe, expect, it, vi } from "vitest";
@@ -591,6 +591,142 @@ Body
 - tail`);
     expect(state.doc.firstChild?.child(1).type.name).toBe("task_list_item");
     expect(state.doc.firstChild?.child(1).attrs.checked).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "task item nested under a plain item",
+      markdown: `- parent
+  - [x] child
+- tail`,
+      expected: `- parent
+  - [x] child
+- [ ]
+- tail`,
+      emptyType: "task_list_item",
+    },
+    {
+      name: "plain item nested under a task item",
+      markdown: `- [ ] parent
+  - child
+- tail`,
+      expected: `- [ ] parent
+  - child
+-
+- tail`,
+      emptyType: "list_item",
+    },
+  ])(
+    "outdents an empty $name on Enter without flattening it",
+    ({ markdown, expected, emptyType }) => {
+      let state = createGFMarkdownState({ context, value: markdown });
+      const originalDoc = state.doc.toJSON();
+      const childPos = findTextPosition(state, "child");
+      state = state.apply(
+        state.tr.setSelection(TextSelection.create(state.doc, childPos + 5)),
+      );
+
+      state = runKey(state, "Enter");
+      state = state.apply(closeHistory(state.tr));
+      state = runKey(state, "Enter");
+
+      expect(serializeMarkdown(state.doc)).toBe(expected);
+      expect(state.doc.firstChild?.child(1).type.name).toBe(emptyType);
+      expect(state.doc.firstChild?.child(0).lastChild?.type.name).toBe(
+        "bullet_list",
+      );
+      const serialized = serializeMarkdown(state.doc);
+      expect(
+        createGFMarkdownState({ context, value: serialized }).doc.toJSON(),
+      ).toEqual(state.doc.toJSON());
+
+      expect(
+        undo(state, (transaction) => {
+          state = state.apply(transaction);
+        }),
+      ).toBe(true);
+      expect(
+        undo(state, (transaction) => {
+          state = state.apply(transaction);
+        }),
+      ).toBe(true);
+      expect(state.doc.toJSON()).toEqual(originalDoc);
+    },
+  );
+
+  it("splits checked tasks into an unchecked item and preserves descendants", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: `- [x] child
+  - grandchild`,
+    });
+    const originalDoc = state.doc.toJSON();
+    const childPos = findTextPosition(state, "child");
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, childPos + 2)),
+    );
+
+    state = runKey(state, "Enter");
+
+    const list = state.doc.firstChild;
+    expect(list?.childCount).toBe(2);
+    expect(list?.child(0).attrs.checked).toBe(true);
+    expect(list?.child(1).attrs.checked).toBe(false);
+    expect(list?.child(1).lastChild?.type.name).toBe("bullet_list");
+    expect(serializeMarkdown(state.doc)).toBe(`- [x] ch
+- [ ] ild
+  - grandchild`);
+    expect(
+      createGFMarkdownState({
+        context,
+        value: serializeMarkdown(state.doc),
+      }).doc.toJSON(),
+    ).toEqual(state.doc.toJSON());
+
+    expect(
+      undo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(state.doc.toJSON()).toEqual(originalDoc);
+  });
+
+  it("preserves ordered starts when Enter exits an empty nested item", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: `- parent
+
+  3. child
+
+- tail`,
+    });
+    const childPos = findTextPosition(state, "child");
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, childPos + 5)),
+    );
+
+    state = runKey(state, "Enter");
+    expect(
+      state.doc.firstChild?.firstChild?.lastChild?.attrs.order,
+    ).toBe(3);
+    state = runKey(state, "Enter");
+
+    expect(serializeMarkdown(state.doc)).toBe(`- parent
+
+  3. child
+
+-
+
+- tail`);
+    expect(
+      state.doc.firstChild?.firstChild?.lastChild?.attrs.order,
+    ).toBe(3);
+    expect(
+      createGFMarkdownState({
+        context,
+        value: serializeMarkdown(state.doc),
+      }).doc.toJSON(),
+    ).toEqual(state.doc.toJSON());
   });
 });
 

@@ -1,15 +1,66 @@
 import { chainCommands } from "prosemirror-commands";
 import { splitListItem } from "prosemirror-schema-list";
-import type { Command } from "prosemirror-state";
+import type { Command, Transaction } from "prosemirror-state";
 import { gfmSchema } from "../schema";
 import { changeListIndent } from "./indent";
 import { isListItemType } from "./utils";
 
 export function splitCurrentListItem(): Command {
   return chainCommands(
-    splitListItem(gfmSchema.nodes.task_list_item, { checked: false }),
+    outdentEmptyNestedListItem(),
+    splitTaskListItem(),
     splitListItem(gfmSchema.nodes.list_item),
   );
+}
+
+function splitTaskListItem(): Command {
+  const split = splitListItem(gfmSchema.nodes.task_list_item, {
+    checked: false,
+    spread: false,
+  });
+
+  return (state, dispatch) =>
+    split(
+      state,
+      dispatch
+        ? (transaction) => dispatch(resetCurrentTask(transaction))
+        : undefined,
+    );
+}
+
+function resetCurrentTask(transaction: Transaction) {
+  const { $from } = transaction.selection;
+  for (let depth = $from.depth - 1; depth > 0; depth -= 1) {
+    const node = $from.node(depth);
+    if (node.type !== gfmSchema.nodes.task_list_item) continue;
+
+    return transaction.setNodeMarkup(
+      $from.before(depth),
+      gfmSchema.nodes.task_list_item,
+      {
+        ...node.attrs,
+        checked: false,
+      },
+    );
+  }
+
+  return transaction;
+}
+
+function outdentEmptyNestedListItem(): Command {
+  return (state, dispatch, view) => {
+    const { empty, $from } = state.selection;
+    if (
+      !empty ||
+      !$from.parent.isTextblock ||
+      $from.parent.content.size !== 0 ||
+      !hasNestedListItemParent($from)
+    ) {
+      return false;
+    }
+
+    return changeListIndent("outdent")(state, dispatch, view);
+  };
 }
 
 export function outdentNestedListItemAtStart(): Command {
@@ -23,13 +74,7 @@ export function outdentNestedListItemAtStart(): Command {
       return false;
     }
 
-    let itemDepth = -1;
-    for (let depth = $from.depth - 1; depth > 0; depth -= 1) {
-      if (isListItemType($from.node(depth).type)) {
-        itemDepth = depth;
-        break;
-      }
-    }
+    const itemDepth = nearestListItemDepth($from);
 
     if (
       itemDepth < 3 ||
@@ -41,4 +86,18 @@ export function outdentNestedListItemAtStart(): Command {
 
     return changeListIndent("outdent")(state, dispatch, view);
   };
+}
+
+function hasNestedListItemParent($from: Parameters<typeof nearestListItemDepth>[0]) {
+  const itemDepth = nearestListItemDepth($from);
+  return itemDepth >= 3 && isListItemType($from.node(itemDepth - 2).type);
+}
+
+function nearestListItemDepth(
+  $from: import("prosemirror-model").ResolvedPos,
+) {
+  for (let depth = $from.depth - 1; depth > 0; depth -= 1) {
+    if (isListItemType($from.node(depth).type)) return depth;
+  }
+  return -1;
 }
