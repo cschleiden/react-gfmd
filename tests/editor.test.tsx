@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createGFMarkdownState,
   GFMarkdownEditor,
+  gfmSchema,
   parseHTML,
   serializeMarkdown,
 } from "../src";
@@ -21,6 +22,7 @@ import {
   openLink,
   removeLink,
 } from "../src/link";
+import { autolinkRanges } from "../src/autolink";
 import {
   changeListIndent,
   changeListType,
@@ -973,6 +975,166 @@ Body
       expect(openLink(href, opener)).toBe(true);
     }
     expect(opener).toHaveBeenCalledTimes(4);
+  });
+
+  it.each([
+    {
+      typed: "https://example.com ",
+      markdown: "<https://example.com>&#x20;",
+      href: "https://example.com",
+    },
+    {
+      typed: "www.example.com ",
+      markdown: "[www.example.com](http://www.example.com)&#x20;",
+      href: "http://www.example.com",
+    },
+    {
+      typed: "user@example.com ",
+      markdown: "<user@example.com>&#x20;",
+      href: "mailto:user@example.com",
+    },
+  ])("auto-links typed GFM text: $typed", ({ typed, markdown, href }) => {
+    const state = typeText(createGFMarkdownState({ context, value: "" }), typed);
+    const firstText = state.doc.firstChild?.firstChild;
+
+    expect(serializeMarkdown(state.doc)).toBe(markdown);
+    expect(firstText?.marks[0]?.attrs.href).toBe(href);
+  });
+
+  it("auto-links before trailing punctuation without linking the punctuation", () => {
+    const state = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      "See https://example.com, ",
+    );
+    const paragraph = state.doc.firstChild;
+
+    expect(serializeMarkdown(state.doc)).toBe(
+      "See <https://example.com>,&#x20;",
+    );
+    expect(paragraph?.lastChild?.text).toBe(", ");
+    expect(paragraph?.lastChild?.marks).toHaveLength(0);
+  });
+
+  it("auto-links the current token before Enter", () => {
+    let state = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      "https://example.com",
+    );
+    state = runKey(state, "Enter");
+
+    expect(serializeMarkdown(state.doc)).toBe("<https://example.com>");
+    expect(state.doc.childCount).toBe(2);
+  });
+
+  it("auto-links every GFM URL and email in pasted plain text", () => {
+    let state = createGFMarkdownState({ context, value: "" });
+    state = state.apply(
+      state.tr
+        .insertText("Visit https://example.com or email user@example.com")
+        .setMeta("uiEvent", "paste"),
+    );
+
+    expect(serializeMarkdown(state.doc)).toBe(
+      "Visit <https://example.com> or email <user@example.com>",
+    );
+  });
+
+  it("does not auto-link relative paths, anchors, or inline code", () => {
+    expect(autolinkRanges("../docs/file.md #heading `https://example.com`")).toEqual(
+      [],
+    );
+  });
+
+  it("preserves overlapping strong marks when auto-linking", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "**https://example.com**",
+    });
+    state = state.apply(state.tr.insertText(" ", state.doc.content.size - 1));
+
+    const linkedText = state.doc.firstChild?.firstChild;
+    expect(linkedText?.marks.map((mark) => mark.type.name).sort()).toEqual([
+      "link",
+      "strong",
+    ]);
+    expect(gfmSchema.marks.link.isInSet(linkedText?.marks ?? [])?.attrs.href).toBe(
+      "https://example.com",
+    );
+  });
+
+  it("undoes auto-linking with the boundary that triggered it", () => {
+    let state = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      "https://example.com ",
+    );
+    expect(isLinkActive(
+      state.apply(
+        state.tr.setSelection(TextSelection.create(state.doc, 2)),
+      ),
+    )).toBe(true);
+
+    expect(
+      undo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(serializeMarkdown(state.doc)).toBe("");
+    expect(
+      redo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(serializeMarkdown(state.doc)).toBe("<https://example.com>&#x20;");
+  });
+
+  it("does not recreate an explicitly removed link after later typing", () => {
+    let state = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      "See https://example.com and more ",
+    );
+    const linkPosition = findTextPosition(state, "https://example.com");
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, linkPosition + 2)),
+    );
+    state = state.apply(removeLink(state, linkSelection(state)!));
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, state.doc.content.size - 1),
+      ),
+    );
+    state = typeText(state, "later ");
+
+    expect(isLinkActive(
+      state.apply(
+        state.tr.setSelection(TextSelection.create(state.doc, linkPosition + 2)),
+      ),
+    )).toBe(false);
+  });
+
+  it("does not recreate an explicitly removed link after an unrelated paste", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: `First https://example.com paragraph.
+
+Second paragraph.`,
+    });
+    const linkPosition = findTextPosition(state, "https://example.com");
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, linkPosition + 2)),
+    );
+    state = state.apply(removeLink(state, linkSelection(state)!));
+    const secondPosition = findTextPosition(state, "Second paragraph.");
+    state = state.apply(
+      state.tr
+        .insertText("Pasted ", secondPosition, secondPosition)
+        .setMeta("uiEvent", "paste"),
+    );
+
+    expect(isLinkActive(
+      state.apply(
+        state.tr.setSelection(TextSelection.create(state.doc, linkPosition + 2)),
+      ),
+    )).toBe(false);
   });
 
   it("indents task items in mixed lists", () => {

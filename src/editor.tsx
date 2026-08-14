@@ -18,6 +18,7 @@ import type {
   CreateGFMarkdownStateOptions,
   GFMarkdownEditorProps,
 } from "./editor-types";
+import { createAutolinkPlugin } from "./autolink";
 import { createMarkdownClipboardPlugin } from "./clipboard";
 import { CodeBlockNodeView } from "./features/code-block";
 import {
@@ -127,6 +128,7 @@ function createPlugins(options: CreateGFMarkdownStateOptions): Plugin[] {
   return [
     history(),
     reactKeys(),
+    createAutolinkPlugin(),
     keymap({
       Enter: splitCurrentListItem(),
       Backspace: outdentNestedListItemAtStart(),
