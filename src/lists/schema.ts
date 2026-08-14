@@ -16,12 +16,19 @@ export const orderedListNodeSpec: NodeSpec = {
           order: node.hasAttribute("start")
             ? Number(node.getAttribute("start"))
             : 1,
+          tight: node.getAttribute("data-tight") !== "false",
         };
       },
     },
   ],
-  toDOM: (node) =>
-    node.attrs.order === 1 ? ["ol", 0] : ["ol", { start: node.attrs.order }, 0],
+  toDOM: (node) => [
+    "ol",
+    {
+      ...(node.attrs.order === 1 ? {} : { start: node.attrs.order }),
+      "data-tight": String(node.attrs.tight),
+    },
+    0,
+  ],
 };
 
 export const bulletListNodeSpec: NodeSpec = {
@@ -30,8 +37,16 @@ export const bulletListNodeSpec: NodeSpec = {
   attrs: {
     tight: { default: true },
   },
-  parseDOM: [{ tag: "ul" }],
-  toDOM: () => ["ul", 0],
+  parseDOM: [
+    {
+      tag: "ul",
+      getAttrs: (node) => {
+        if (!(node instanceof HTMLElement)) return false;
+        return { tight: node.getAttribute("data-tight") !== "false" };
+      },
+    },
+  ],
+  toDOM: (node) => ["ul", { "data-tight": String(node.attrs.tight) }, 0],
 };
 
 export const listItemNodeSpec: NodeSpec = {
@@ -64,7 +79,8 @@ export const taskListItemNodeSpec: NodeSpec = {
   },
   parseDOM: [
     {
-      tag: "li[data-gfmd-task-item], li[data-checked]",
+      tag: "li[data-gfmd-task-item], li[data-checked], li.task-list-item",
+      priority: 60,
       getAttrs: (node) => {
         if (!(node instanceof HTMLElement)) return false;
 
