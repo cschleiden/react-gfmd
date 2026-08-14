@@ -15,6 +15,7 @@ import type {
   Image,
   ImageReference,
   InlineCode,
+  Link,
   List,
   ListItem,
   Nodes as MdastNode,
@@ -86,10 +87,7 @@ const markdownHandlers = {
   emphasis: toPmMark(gfmSchema.marks.em),
   strong: toPmMark(gfmSchema.marks.strong),
   delete: toPmMark(gfmSchema.marks.strike),
-  link: toPmMark(gfmSchema.marks.link, (node) => ({
-    href: node.url,
-    title: node.title ?? null,
-  })),
+  link: parseLink,
   footnoteReference: (node: FootnoteReference) =>
     gfmSchema.nodes.footnote_reference.create({
       identifier: node.identifier,
@@ -155,6 +153,12 @@ const proseMirrorNodeHandlers: FromProseMirrorOptions<
   }),
   horizontal_rule: () => ({ type: "thematicBreak" }),
   hard_break: () => ({ type: "break" }),
+  empty_link: (node) => ({
+    type: "link",
+    url: node.attrs.href,
+    title: node.attrs.title,
+    children: [],
+  }),
   raw_block: rawMarkdownToMdast,
   raw_inline: rawMarkdownToMdast,
   image: (node) => ({
@@ -276,6 +280,23 @@ function imageNode(node: Pick<Image, "alt" | "title" | "url">) {
     alt: node.alt ?? null,
     title: node.title ?? null,
   });
+}
+
+function parseLink(
+  node: Link,
+  _parent: MdastParent,
+  state: HandlerState,
+) {
+  const children = state.all(node);
+  const attrs = { href: node.url, title: node.title ?? null };
+  if (children.length === 0) {
+    return gfmSchema.nodes.empty_link.create(attrs);
+  }
+
+  const mark = gfmSchema.marks.link.create(attrs);
+  return children.map((child) =>
+    child.isInline ? child.mark(mark.addToSet(child.marks)) : child,
+  );
 }
 
 function parseImageReference(

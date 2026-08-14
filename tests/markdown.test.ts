@@ -49,6 +49,66 @@ describe("markdown", () => {
     },
   );
 
+  it.each([
+    "[label](https://example.com/a\\(b\\) \"A title\")",
+    "[relative](../docs/file.md#section) [anchor](#heading) [mail](mailto:user@example.com)",
+    "<https://example.com/a?x=1&y=2>",
+    "https://example.com/path?q=one",
+    "<user@example.com>",
+    "user@example.com",
+    "[**bold** and *emphasized*](https://example.com)",
+    "[](https://example.com \"Empty label\")",
+    "[brackets \\[inside\\]](<docs/a b.md> 'Title')",
+    "[broken](<unterminated)",
+    "[missing destination](",
+  ])("preserves link semantics and converges: %s", (markdown) => {
+    const originalDoc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(originalDoc);
+    const reparsedDoc = parseMarkdown(serialized);
+
+    expect(reparsedDoc.toJSON()).toEqual(originalDoc.toJSON());
+    expect(serializeMarkdown(reparsedDoc)).toBe(serialized);
+    expect(reparsedDoc.textContent).toBe(originalDoc.textContent);
+  });
+
+  it("preserves empty link destinations and titles", () => {
+    const doc = parseMarkdown("Before [](../target \"Title\") after");
+    const emptyLinks: Array<Record<string, unknown>> = [];
+    doc.descendants((node) => {
+      if (node.type.name === "empty_link") emptyLinks.push(node.attrs);
+    });
+
+    expect(emptyLinks).toEqual([{ href: "../target", title: "Title" }]);
+    expect(serializeMarkdown(doc)).toBe("Before [](../target \"Title\") after");
+  });
+
+  it("keeps links inside nested lists, tables, and details structurally stable", () => {
+    const markdown = `- outer
+  - [nested](../nested "Nested")
+
+| Link |
+| ---- |
+| [cell](#cell) |
+
+<details>
+<summary>[Summary](mailto:user@example.com)</summary>
+
+[Body](https://example.com)
+
+</details>`;
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+    const reparsed = parseMarkdown(serialized);
+
+    expect(reparsed.toJSON()).toEqual(doc.toJSON());
+    expect(serializeMarkdown(reparsed)).toBe(serialized);
+    expect(reparsed.firstChild?.firstChild?.lastChild?.type.name).toBe(
+      "bullet_list",
+    );
+    expect(reparsed.child(1).type.name).toBe("table");
+    expect(reparsed.child(2).type.name).toBe("details");
+  });
+
   it("round-trips images", () => {
     const markdown = "![Alt text](https://example.com/image.png \"Title\")";
 

@@ -58,6 +58,38 @@ export const gfmSchema = new Schema({
     .append({
       details: detailsNodeSpec,
       details_summary: detailsSummaryNodeSpec,
+      empty_link: {
+        inline: true,
+        group: "inline",
+        atom: true,
+        selectable: true,
+        attrs: {
+          href: { validate: "string" },
+          title: { default: null, validate: "string|null" },
+        },
+        parseDOM: [
+          {
+            tag: "span[data-gfmd-empty-link]",
+            getAttrs: (node) => {
+              if (!(node instanceof HTMLElement)) return false;
+              return {
+                href: node.getAttribute("data-href") ?? "",
+                title: node.getAttribute("data-title"),
+              };
+            },
+          },
+        ],
+        toDOM: (node) => [
+          "span",
+          {
+            "aria-label": `Empty link to ${node.attrs.href}`,
+            "data-gfmd-empty-link": "",
+            "data-href": node.attrs.href,
+            "data-title": node.attrs.title,
+          },
+          "\u200b",
+        ],
+      },
       footnote_definition: blockContainerNode(
         "section",
         "data-gfmd-footnote-definition",
@@ -95,22 +127,58 @@ export const gfmSchema = new Schema({
       task_list_item: taskListItemNodeSpec,
     })
     .append(tableNodeSpecs),
-  marks: basicSchema.spec.marks.append({
-    strike: {
-      parseDOM: [{ tag: "s" }, { tag: "del" }],
-      toDOM: () => ["del", 0],
-    },
-    subscript: {
-      excludes: "superscript",
-      parseDOM: [{ tag: "sub" }],
-      toDOM: () => ["sub", 0],
-    },
-    superscript: {
-      excludes: "subscript",
-      parseDOM: [{ tag: "sup" }],
-      toDOM: () => ["sup", 0],
-    },
-  }),
+  marks: basicSchema.spec.marks
+    .update("link", {
+      ...basicSchema.spec.marks.get("link"),
+      parseDOM: [
+        {
+          tag: "a[href]",
+          getAttrs: (node) => {
+            if (!(node instanceof HTMLElement)) return false;
+            return {
+              href: node.getAttribute("href") ?? "",
+              title: node.getAttribute("title"),
+            };
+          },
+        },
+        {
+          tag: "span[data-gfmd-link]",
+          getAttrs: (node) => {
+            if (!(node instanceof HTMLElement)) return false;
+            return {
+              href: node.getAttribute("data-href") ?? "",
+              title: node.getAttribute("data-title"),
+            };
+          },
+        },
+      ],
+      toDOM: (mark) => [
+        "span",
+        {
+          "aria-label": `Link to ${mark.attrs.href}`,
+          "data-gfmd-link": "",
+          "data-href": mark.attrs.href,
+          "data-title": mark.attrs.title,
+        },
+        0,
+      ],
+    })
+    .append({
+      strike: {
+        parseDOM: [{ tag: "s" }, { tag: "del" }],
+        toDOM: () => ["del", 0],
+      },
+      subscript: {
+        excludes: "superscript",
+        parseDOM: [{ tag: "sub" }],
+        toDOM: () => ["sub", 0],
+      },
+      superscript: {
+        excludes: "subscript",
+        parseDOM: [{ tag: "sup" }],
+        toDOM: () => ["sup", 0],
+      },
+    }),
 });
 
 function rawMarkdownNodeSpec(inline: boolean): NodeSpec {
