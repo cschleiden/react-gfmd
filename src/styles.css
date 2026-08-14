@@ -164,6 +164,47 @@
   letter-spacing: -0.04em;
 }
 
+.gfmd-footnote-menu {
+  z-index: 1000;
+  min-width: 220px;
+  padding: 4px;
+  border: 1px solid var(--gfmd-border);
+  border-radius: var(--gfmd-radius);
+  background: var(--gfmd-canvas);
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+  color: var(--gfmd-fg);
+  font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.gfmd-footnote-menu-item {
+  display: grid;
+  gap: 1px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  outline: none;
+}
+
+.gfmd-footnote-menu-item[data-highlighted] {
+  background: var(--gfmd-subtle);
+}
+
+.gfmd-footnote-menu-item small,
+.gfmd-footnote-menu-label {
+  color: var(--gfmd-muted-fg);
+}
+
+.gfmd-footnote-menu-separator {
+  height: 1px;
+  margin: 4px;
+  background: var(--gfmd-border);
+}
+
+.gfmd-footnote-menu-label {
+  padding: 4px 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .gfmd-toolbar-button:hover:not(:disabled),
 .gfmd-toolbar-button[data-active] {
   border-color: var(--gfmd-border);

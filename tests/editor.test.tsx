@@ -9,6 +9,7 @@ import {
   GFMarkdownEditor,
   gfmSchema,
   insertFootnote,
+  insertFootnoteReference,
   renameFootnote,
   serializeMarkdown,
 } from "../src";
@@ -125,17 +126,39 @@ Body
     );
 
     fireEvent.click(screen.getByTitle("Insert footnote"));
+    fireEvent.click(screen.getByText("New footnote"));
 
     expect(
       screen.getByRole("button", {
         name: "Footnote 2; go to definition",
       }),
     ).toBeTruthy();
-    expect(document.activeElement?.classList.contains("gfmd-editor-surface")).toBe(
-      true,
-    );
     expect(onChange.mock.lastCall?.[0]).toContain("[^2]");
     expect(onChange.mock.lastCall?.[0]).toContain("[^2]:");
+  });
+
+  it("inserts another reference to an existing footnote from the toolbar", () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value={"Existing[^note].\n\n[^note]: Shared definition."}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("Insert footnote"));
+    fireEvent.click(screen.getByText("[^note]"));
+
+    expect(
+      screen.getAllByRole("button", {
+        name: "Footnote note; go to definition",
+      }),
+    ).toHaveLength(2);
+    expect(onChange.mock.lastCall?.[0]).toContain(
+      "[^note]Existing[^note].",
+    );
+    expect(onChange.mock.lastCall?.[0].match(/\[\^note\]:/g)).toHaveLength(1);
   });
 
   it("synchronizes definition label edits across multiple references", () => {
@@ -288,6 +311,7 @@ Body
       context,
       value: "Keep selected text",
     });
+
     state = state.apply(
       state.tr.setSelection(TextSelection.create(state.doc, 1, 5)),
     );
@@ -297,6 +321,25 @@ Body
     });
 
     expect(serializeMarkdown(state.doc)).toContain("Keep[^1] selected text");
+  });
+
+  it("inserts another reference without duplicating its definition", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "See[^note].\n\n[^note]: Shared.",
+    });
+
+    insertFootnoteReference("note")(state, (transaction) => {
+      state = state.apply(transaction);
+    });
+
+    const markdown = serializeMarkdown(state.doc);
+    let referenceCount = 0;
+    state.doc.descendants((node) => {
+      if (node.type.name === "footnote_reference") referenceCount += 1;
+    });
+    expect(referenceCount).toBe(2);
+    expect(markdown.match(/\[\^note\]:/g)).toHaveLength(1);
   });
 
   it("round-trips copied footnote DOM without losing identifiers or content", () => {

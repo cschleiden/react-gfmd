@@ -34,9 +34,11 @@ import {
   isInAnyListItem,
 } from "./lists/commands";
 import {
+  footnoteDefinitions,
   footnoteLabelForIdentifier,
   footnoteRenameError,
   insertFootnote,
+  insertFootnoteReference,
   renameFootnote,
   selectedFootnoteIdentifier,
 } from "./features/footnotes";
@@ -103,12 +105,6 @@ const markActions: ToolbarAction[] = [
 ];
 
 const blockActions: ToolbarAction[] = [
-  {
-    id: "footnote",
-    icon: <span className="gfmd-toolbar-footnote-icon" aria-hidden>[^]</span>,
-    title: "Insert footnote",
-    command: insertFootnote,
-  },
   {
     id: "quote",
     icon: <Quote className="gfmd-toolbar-icon" size={16} />,
@@ -204,6 +200,7 @@ export function GFMarkdownToolbar({
         aria-label="Block formatting"
       >
         <HeadingLevelSelect state={state} view={view} />
+        <FootnoteMenu state={state} view={view} />
         {blockActions.map((action) => (
           <ToolbarActionButton
             action={action}
@@ -215,6 +212,70 @@ export function GFMarkdownToolbar({
         <RenameFootnoteButton state={state} view={view} />
       </Toolbar.Group>
     </Toolbar.Root>
+  );
+}
+
+function FootnoteMenu({
+  state,
+  view,
+}: {
+  state: EditorState;
+  view: EditorView;
+}) {
+  const definitions = footnoteDefinitions(state.doc);
+  const canInsert = insertFootnote(state, undefined, view);
+
+  return (
+    <Menu.Root modal={false}>
+      <Menu.Trigger
+        aria-label="Insert footnote"
+        className="gfmd-toolbar-button"
+        disabled={!canInsert}
+        title="Insert footnote"
+        type="button"
+      >
+        <span className="gfmd-toolbar-footnote-icon" aria-hidden>[^]</span>
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner sideOffset={4}>
+          <Menu.Popup
+            aria-label="Footnote options"
+            className="gfmd-footnote-menu"
+          >
+            <Menu.Item
+              className="gfmd-footnote-menu-item"
+              onClick={() => runCommand(view, insertFootnote)}
+            >
+              <span>New footnote</span>
+              <small>Create a reference and definition</small>
+            </Menu.Item>
+            {definitions.length ? (
+              <>
+                <Menu.Separator className="gfmd-footnote-menu-separator" />
+                <div className="gfmd-footnote-menu-label">
+                  Reference existing
+                </div>
+                {definitions.map((definition) => (
+                  <Menu.Item
+                    className="gfmd-footnote-menu-item"
+                    key={definition.identifier}
+                    onClick={() =>
+                      runCommand(
+                        view,
+                        insertFootnoteReference(definition.identifier),
+                      )
+                    }
+                  >
+                    <span>[^{definition.label}]</span>
+                    <small>Add another reference</small>
+                  </Menu.Item>
+                ))}
+              </>
+            ) : null}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   );
 }
 

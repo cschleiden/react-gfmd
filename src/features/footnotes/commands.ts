@@ -34,6 +34,52 @@ export const insertFootnote: Command = (state, dispatch) => {
   return true;
 };
 
+export function insertFootnoteReference(identifier: string): Command {
+  return (state, dispatch) => {
+    if (
+      !(state.selection instanceof TextSelection) ||
+      !state.selection.$to.parent.isTextblock
+    ) {
+      return false;
+    }
+
+    const definition = footnoteDefinitions(state.doc).find(
+      (candidate) =>
+        normalizeFootnoteIdentifier(candidate.identifier) ===
+        normalizeFootnoteIdentifier(identifier),
+    );
+    if (!definition) return false;
+    if (!dispatch) return true;
+
+    const reference = gfmSchema.nodes.footnote_reference.create(definition);
+    const tr = state.tr.insert(state.selection.to, reference);
+    dispatch(
+      tr
+        .setSelection(NodeSelection.create(tr.doc, state.selection.to))
+        .scrollIntoView(),
+    );
+    return true;
+  };
+}
+
+export function footnoteDefinitions(doc: ProseMirrorNode) {
+  const definitions: Array<{ identifier: string; label: string }> = [];
+  const seen = new Set<string>();
+  doc.descendants((node) => {
+    if (node.type !== gfmSchema.nodes.footnote_definition) return true;
+    const identifier = String(node.attrs.identifier);
+    const normalized = normalizeFootnoteIdentifier(identifier);
+    if (seen.has(normalized)) return false;
+    seen.add(normalized);
+    definitions.push({
+      identifier,
+      label: String(node.attrs.label ?? identifier),
+    });
+    return false;
+  });
+  return definitions;
+}
+
 export function renameFootnote(
   identifier: string,
   label: string,

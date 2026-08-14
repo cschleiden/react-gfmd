@@ -1,7 +1,9 @@
 export {
+  footnoteDefinitions,
   footnoteLabelForIdentifier,
   footnoteRenameError,
   insertFootnote,
+  insertFootnoteReference,
   normalizeFootnoteIdentifier,
   renameFootnote,
   selectedFootnoteIdentifier,
