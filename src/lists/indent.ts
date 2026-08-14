@@ -11,21 +11,11 @@ import {
 } from "prosemirror-state";
 import { canJoin, liftTarget, ReplaceAroundStep } from "prosemirror-transform";
 import type { EditorView } from "prosemirror-view";
-import { isListItemNode, isListNode, selectedListItemPositions } from "./utils";
+import { isListItemNode, isListNode } from "./utils";
 
 export function changeListIndent(direction: "indent" | "outdent"): Command {
-  return (state, dispatch, view) => {
-    if (
-      !state.selection.empty &&
-      view &&
-      dispatch &&
-      applyIndentPerSelection(direction, state, dispatch, view)
-    ) {
-      return true;
-    }
-
-    return runListIndentOnce(direction, state, dispatch, view);
-  };
+  return (state, dispatch, view) =>
+    runListIndentOnce(direction, state, dispatch, view);
 }
 
 function runListIndentOnce(
@@ -40,35 +30,6 @@ function runListIndentOnce(
 
   dispatch?.(tr.scrollIntoView());
   return true;
-}
-
-function applyIndentPerSelection(
-  direction: "indent" | "outdent",
-  state: EditorState,
-  dispatch: EditorView["dispatch"],
-  view: EditorView,
-) {
-  const { from, to } = state.selection;
-  const positions = selectedListItemPositions(state)
-    .filter((pos) => pos >= from && pos < to)
-    .sort((a, b) => b - a);
-
-  if (positions.length < 2) return false;
-
-  let changed = false;
-  for (const pos of positions) {
-    const current = view.state;
-    if (pos + 1 >= current.doc.content.size) continue;
-
-    dispatch(
-      current.tr.setSelection(TextSelection.near(current.doc.resolve(pos + 1))),
-    );
-
-    changed =
-      runListIndentOnce(direction, view.state, dispatch, view) || changed;
-  }
-
-  return changed;
 }
 
 function calculateItemRange(selection: EditorState["selection"]) {
