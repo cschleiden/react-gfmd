@@ -154,6 +154,38 @@ const value = 1;
     expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
   });
 
+  it("preserves footnote semantics and converges with multiple references and blocks", () => {
+    const markdown = `First[^Long-note] and again[^Long-note].
+
+- Adjacent list item
+  - Nested reference[^Long-note]
+
+[^Long-note]: A **formatted** paragraph.
+
+    A second paragraph.
+
+    - Nested definition content`;
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+    const reparsed = parseMarkdown(serialized);
+
+    expect(reparsed.toJSON()).toEqual(doc.toJSON());
+    expect(serializeMarkdown(reparsed)).toBe(serialized);
+
+    const references: string[] = [];
+    let definitionBlocks = 0;
+    doc.descendants((node) => {
+      if (node.type.name === "footnote_reference") {
+        references.push(node.attrs.identifier);
+      }
+      if (node.type.name === "footnote_definition") {
+        definitionBlocks = node.childCount;
+      }
+    });
+    expect(references).toEqual(["long-note", "long-note", "long-note"]);
+    expect(definitionBlocks).toBe(3);
+  });
+
   it("round-trips nested blockquotes", () => {
     const markdown = `> Outer
 >
