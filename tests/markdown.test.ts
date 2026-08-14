@@ -32,6 +32,23 @@ describe("markdown", () => {
     expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
   });
 
+  it.each([
+    "**a *b* c**",
+    "*a **b** c*",
+    "***both***",
+    "**bold *inner*** and [**linked**](https://example.com)",
+  ])(
+    "preserves semantics and converges for overlapping marks: %s",
+    (markdown) => {
+      const originalDoc = parseMarkdown(markdown);
+      const serialized = serializeMarkdown(originalDoc);
+      const reparsedDoc = parseMarkdown(serialized);
+
+      expect(reparsedDoc.toJSON()).toEqual(originalDoc.toJSON());
+      expect(serializeMarkdown(reparsedDoc)).toBe(serialized);
+    },
+  );
+
   it("round-trips images", () => {
     const markdown = "![Alt text](https://example.com/image.png \"Title\")";
 
@@ -54,6 +71,44 @@ describe("markdown", () => {
     expect(serializeMarkdown(parseMarkdown(markdown))).toBe(
       "![Alt text](https://example.com/image.png \"Title\")",
     );
+  });
+
+  it.each([
+    "<!-- keep me -->",
+    `<div class="note">
+
+**bold**
+
+</div>`,
+  ])("preserves unsupported block HTML as raw Markdown: %s", (markdown) => {
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+
+    expect(doc.firstChild?.type.name).toBe("raw_block");
+    expect(serialized).toBe(markdown);
+    expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
+  });
+
+  it.each([
+    "Press <kbd>Ctrl</kbd> + <kbd>C</kbd>.",
+    "Use <custom-element data-value=\"1\">content</custom-element>.",
+  ])("preserves unsupported inline HTML as raw Markdown: %s", (markdown) => {
+    const doc = parseMarkdown(markdown);
+    const rawValues: string[] = [];
+    doc.descendants((node) => {
+      if (node.type.name === "raw_inline") rawValues.push(node.attrs.value);
+    });
+
+    expect(rawValues.length).toBeGreaterThan(0);
+    expect(serializeMarkdown(doc)).toBe(markdown);
+  });
+
+  it("keeps HTML images without a source as raw Markdown", () => {
+    const markdown = "<img alt=\"Missing source\">";
+    const doc = parseMarkdown(markdown);
+
+    expect(doc.firstChild?.type.name).toBe("raw_block");
+    expect(serializeMarkdown(doc)).toBe(markdown);
   });
 
   it("round-trips subscript and superscript", () => {
@@ -124,6 +179,53 @@ const value = 1;
 2. d`);
   });
 
+  it.each([
+`- outer
+  1. ordered
+ - deep
+  - sibling
+- tail`,
+`- [ ] parent
+  - [x] child
+1. grandchild`,
+`1. parent
+   - bullet
+ 3. nested start
+2. tail`,
+`- first paragraph
+
+  second paragraph
+
+  > quote
+
+- next`,
+  ])("preserves nested list semantics and converges: %s", (markdown) => {
+const originalDoc = parseMarkdown(markdown);
+const serialized = serializeMarkdown(originalDoc);
+const reparsedDoc = parseMarkdown(serialized);
+
+expect(reparsedDoc.toJSON()).toEqual(originalDoc.toJSON());
+expect(serializeMarkdown(reparsedDoc)).toBe(serialized);
+  });
+
+  it("preserves item-level spread in loose nested lists", () => {
+const markdown = `- compact
+- first paragraph
+
+  second paragraph
+- compact again`;
+const doc = parseMarkdown(markdown);
+const list = doc.firstChild;
+
+expect(list?.type.name).toBe("bullet_list");
+expect(list?.child(0).attrs.spread).toBe(false);
+expect(list?.child(1).attrs.spread).toBe(true);
+expect(list?.child(2).attrs.spread).toBe(false);
+
+const reparsed = parseMarkdown(serializeMarkdown(doc));
+expect(reparsed.toJSON()).toEqual(doc.toJSON());
+  });
+
   it("round-trips GFM tables", () => {
     const markdown = `| A | B |
 | - | - |
@@ -175,11 +277,15 @@ Body
 </details>`;
     const doc = parseMarkdown(markdown);
 
-    expect(doc.firstChild?.firstChild?.textContent).toBe(
-      "<code>npm install</code> instructions",
-    );
+    const summaryRawValues: string[] = [];
+    doc.firstChild?.firstChild?.descendants((node) => {
+      if (node.type.name === "raw_inline") {
+        summaryRawValues.push(node.attrs.value);
+      }
+    });
+    expect(summaryRawValues).toEqual(["<code>", "</code>"]);
     expect(serializeMarkdown(doc)).toBe(`<details>
-<summary>\\<code>npm install\\</code> instructions</summary>
+<summary><code>npm install</code> instructions</summary>
 
 Body
 
@@ -216,13 +322,13 @@ const x = "code inside nested details";
     expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
   });
 
-  it("leaves malformed details blocks as raw text fallback", () => {
+  it("preserves malformed details blocks as raw Markdown", () => {
     const markdown = `<details>
 
 Body without a close`;
 
-    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(`\\<details>
-
-Body without a close`);
+    const doc = parseMarkdown(markdown);
+    expect(doc.firstChild?.type.name).toBe("raw_block");
+    expect(serializeMarkdown(doc)).toBe(markdown);
   });
 });

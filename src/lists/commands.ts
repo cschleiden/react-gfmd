@@ -128,7 +128,10 @@ function copyListWithItems(list: ProseMirrorNode, items: ProseMirrorNode[]) {
 
 function asPlainListItem(item: ProseMirrorNode) {
   if (item.type === gfmSchema.nodes.list_item) return item;
-  return gfmSchema.nodes.list_item.createChecked(null, item.content);
+  return gfmSchema.nodes.list_item.createChecked(
+    { spread: item.attrs.spread ?? false },
+    item.content,
+  );
 }
 
 export function isCurrentListType(type: NodeType) {

@@ -189,6 +189,25 @@
   min-height: 1.5em;
 }
 
+.gfmd-editor-surface [data-gfmd-raw-block],
+.gfmd-editor-surface [data-gfmd-raw-inline] {
+  border: 1px dashed var(--gfmd-border);
+  border-radius: 4px;
+  background: var(--gfmd-subtle);
+  color: var(--gfmd-muted-fg);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.gfmd-editor-surface [data-gfmd-raw-block] {
+  margin: 12px 0;
+  padding: 8px;
+}
+
+.gfmd-editor-surface [data-gfmd-raw-inline] {
+  padding: 1px 3px;
+}
+
 .gfmd-editor-surface .gfmd-task-list-item {
   position: relative;
   list-style: none;

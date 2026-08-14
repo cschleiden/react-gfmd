@@ -88,6 +88,8 @@ export const gfmSchema = new Schema({
           `[^${node.attrs.label ?? node.attrs.identifier}]`,
         ],
       },
+      raw_block: rawMarkdownNodeSpec(false),
+      raw_inline: rawMarkdownNodeSpec(true),
       task_list_item: taskListItemNodeSpec,
     })
     .append(tableNodeSpecs),
@@ -108,6 +110,40 @@ export const gfmSchema = new Schema({
     },
   }),
 });
+
+function rawMarkdownNodeSpec(inline: boolean): NodeSpec {
+  const tag = inline ? "code" : "pre";
+  const marker = inline ? "data-gfmd-raw-inline" : "data-gfmd-raw-block";
+
+  return {
+    atom: true,
+    group: inline ? "inline" : "block",
+    inline,
+    selectable: true,
+    attrs: {
+      value: { default: "" },
+    },
+    parseDOM: [
+      {
+        tag: `${tag}[${marker}]`,
+        getAttrs: (node) => {
+          if (!(node instanceof HTMLElement)) return false;
+          return { value: node.getAttribute("data-source") ?? node.textContent };
+        },
+      },
+    ],
+    toDOM: (node) => [
+      tag,
+      {
+        [marker]: "",
+        "data-source": node.attrs.value,
+        contenteditable: "false",
+        "aria-label": "Unsupported Markdown source",
+      },
+      node.attrs.value,
+    ],
+  };
+}
 
 function blockContainerNode(tag: string, markerAttr: string): NodeSpec {
   return {

@@ -1,7 +1,6 @@
 import {
   fromPmMark,
   fromPmNode,
-  fromProseMirror,
   remarkProseMirror,
   toPmMark,
   toPmNode,
@@ -44,6 +43,7 @@ import {
   type FromProseMirrorState,
   type HandlerState,
 } from "./mdast-utils";
+import { fromProseMirrorStable } from "./from-prosemirror";
 import { gfmSchema } from "./schema";
 
 const subscriptInlineTokenPattern = /@@GFMD_SUB\((.*?)\)@@/;
@@ -154,6 +154,8 @@ const proseMirrorNodeHandlers: FromProseMirrorOptions<
   }),
   horizontal_rule: () => ({ type: "thematicBreak" }),
   hard_break: () => ({ type: "break" }),
+  raw_block: rawMarkdownToMdast,
+  raw_inline: rawMarkdownToMdast,
   image: (node) => ({
     type: "image",
     url: node.attrs.src,
@@ -223,7 +225,7 @@ export function parseWithRemark(markdown: string) {
 }
 
 export function serializeWithRemark(doc: ProseMirrorNode) {
-  const tree = fromProseMirror(doc, {
+  const tree = fromProseMirrorStable(doc, {
     schema: gfmSchema,
     nodeHandlers: proseMirrorNodeHandlers,
     markHandlers: proseMirrorMarkHandlers,
@@ -304,10 +306,11 @@ function imageReferenceMarkdown(node: ImageReference) {
 function parseHtml(node: Html, parent: MdastParent | undefined) {
   const image = htmlImageNode(node.value);
   if (!image) {
-    const text = gfmSchema.text(node.value);
-    return parent?.type === "paragraph"
-      ? text
-      : gfmSchema.nodes.paragraph.create(null, text);
+    const type =
+      parent?.type === "paragraph"
+        ? gfmSchema.nodes.raw_inline
+        : gfmSchema.nodes.raw_block;
+    return type.create({ value: node.value });
   }
 
   return parent?.type === "paragraph"
@@ -318,12 +321,21 @@ function parseHtml(node: Html, parent: MdastParent | undefined) {
 function htmlImageNode(html: string) {
   const trimmed = html.trim();
   if (!/^<img[\s>/]/i.test(trimmed)) return null;
+  const src = htmlAttribute(trimmed, "src");
+  if (src === null) return null;
 
   return imageNode({
     alt: htmlAttribute(trimmed, "alt"),
     title: htmlAttribute(trimmed, "title"),
-    url: htmlAttribute(trimmed, "src") ?? "",
+    url: src,
   });
+}
+
+function rawMarkdownToMdast(node: ProseMirrorNode): Html {
+  return {
+    type: "html",
+    value: String(node.attrs.value),
+  };
 }
 
 function htmlAttribute(html: string, name: string) {

@@ -37,14 +37,30 @@ export const bulletListNodeSpec: NodeSpec = {
 export const listItemNodeSpec: NodeSpec = {
   content: "paragraph block*",
   defining: true,
-  parseDOM: [{ tag: "li" }],
-  toDOM: () => ["li", 0],
+  attrs: {
+    spread: { default: false },
+  },
+  parseDOM: [
+    {
+      tag: "li",
+      getAttrs: (node) => {
+        if (!(node instanceof HTMLElement)) return false;
+        return { spread: node.getAttribute("data-spread") === "true" };
+      },
+    },
+  ],
+  toDOM: (node) => [
+    "li",
+    { "data-spread": node.attrs.spread ? "true" : "false" },
+    0,
+  ],
 };
 
 export const taskListItemNodeSpec: NodeSpec = {
   ...listItemNodeSpec,
   attrs: {
     checked: { default: false },
+    spread: { default: false },
   },
   parseDOM: [
     {
@@ -53,13 +69,14 @@ export const taskListItemNodeSpec: NodeSpec = {
         if (!(node instanceof HTMLElement)) return false;
 
         const checkedAttr = node.getAttribute("data-checked");
-        if (checkedAttr === "true") return { checked: true };
-        if (checkedAttr === "false") return { checked: false };
-        if (checkedAttr === "") return { checked: null };
+        const spread = node.getAttribute("data-spread") === "true";
+        if (checkedAttr === "true") return { checked: true, spread };
+        if (checkedAttr === "false") return { checked: false, spread };
+        if (checkedAttr === "") return { checked: null, spread };
 
         const checkbox = node.querySelector("input[type='checkbox']");
         if (checkbox instanceof HTMLInputElement) {
-          return { checked: checkbox.checked };
+          return { checked: checkbox.checked, spread };
         }
 
         return false;
@@ -71,6 +88,7 @@ export const taskListItemNodeSpec: NodeSpec = {
     const attrs = {
       "data-gfmd-task-item": "",
       "data-checked": checked === null ? "" : String(checked),
+      "data-spread": node.attrs.spread ? "true" : "false",
       class:
         checked === null
           ? "gfmd-task-list-item-plain"
