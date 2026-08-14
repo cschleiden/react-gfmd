@@ -114,7 +114,13 @@ function convertSelectedListItems(
   if (!selectedItems.length) return tr;
 
   const beforeList = copyListWithItems(context.node, beforeItems, 0);
-  const targetList = targetType.create(attrs, selectedItems);
+  const targetList = targetType.create(
+    {
+      ...attrs,
+      tight: representableTightness(context.node, selectedItems),
+    },
+    selectedItems,
+  );
   const afterList = copyListWithItems(
     context.node,
     afterItems,
@@ -171,9 +177,7 @@ function representableTightness(
   items: ProseMirrorNode[],
 ) {
   if (list.attrs.tight || items.length !== 1) return list.attrs.tight;
-
-  const item = items[0];
-  return item.childCount === 1 && !item.attrs.spread;
+  return true;
 }
 
 function asPlainListItem(item: ProseMirrorNode) {
