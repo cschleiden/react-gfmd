@@ -1,4 +1,5 @@
 import { Menu } from "@base-ui/react/menu";
+import { Popover } from "@base-ui/react/popover";
 import { Toolbar } from "@base-ui/react/toolbar";
 import {
   Bold,
@@ -10,6 +11,7 @@ import {
   IndentIncrease,
   Italic,
   Link2,
+  Link2Off,
   List,
   ListChecks,
   ListOrdered,
@@ -25,6 +27,15 @@ import type { NodeType } from "prosemirror-model";
 import { EditorState, type Command } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import * as React from "react";
+import {
+  applyLinkEdit,
+  isLinkActive,
+  linkSelection,
+  openLink,
+  removeLink,
+  restoreLinkSelection,
+  type LinkSelection,
+} from "./link";
 import {
   changeListIndent,
   changeListType,
@@ -148,13 +159,6 @@ const blockActions: ToolbarAction[] = [
       state.selection.$from.parent.type === gfmSchema.nodes.code_block,
   },
   {
-    id: "link",
-    icon: <Link2 className="gfmd-toolbar-icon" size={16} />,
-    title: "Link",
-    command: insertLink,
-    active: (state) => markActive(state, "link"),
-  },
-  {
     id: "rule",
     icon: <Minus className="gfmd-toolbar-icon" size={16} />,
     title: "Horizontal rule",
@@ -205,6 +209,7 @@ export function GFMarkdownToolbar({
             view={view}
           />
         ))}
+        <LinkEditor state={state} view={view} />
       </Toolbar.Group>
     </Toolbar.Root>
   );
@@ -346,6 +351,193 @@ function ToolbarActionButton({
   );
 }
 
+function LinkEditor({
+  state,
+  view,
+}: {
+  state: EditorState;
+  view: EditorView;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [selection, setSelection] = React.useState<LinkSelection | null>(null);
+  const [href, setHref] = React.useState("");
+  const [title, setTitle] = React.useState("");
+  const [label, setLabel] = React.useState("");
+  const [error, setError] = React.useState("");
+  const sourceDoc = React.useRef(state.doc);
+  const urlInputRef = React.useRef<HTMLInputElement>(null);
+  const active = isLinkActive(state);
+  const canEdit = Boolean(linkSelection(state));
+
+  React.useEffect(() => {
+    if (open && sourceDoc.current !== state.doc) {
+      setOpen(false);
+      setSelection(null);
+    }
+  }, [open, state.doc]);
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) {
+      setOpen(false);
+      if (selection) restoreLinkSelection(view, selection);
+      return;
+    }
+
+    const nextSelection = linkSelection(view.state);
+    if (!nextSelection) return;
+    sourceDoc.current = view.state.doc;
+    setSelection(nextSelection);
+    setHref(nextSelection.href);
+    setTitle(nextSelection.title);
+    setLabel(nextSelection.label);
+    setError("");
+    setOpen(true);
+  }
+
+  function apply(event: React.FormEvent) {
+    event.preventDefault();
+    if (!selection || !href.trim()) {
+      setError("Enter a link URL.");
+      return;
+    }
+
+    view.dispatch(
+      closeHistory(
+        applyLinkEdit(view.state, selection, { href, label, title }),
+      ).scrollIntoView(),
+    );
+    setOpen(false);
+    setSelection(null);
+    view.focus();
+  }
+
+  function unlink() {
+    if (!selection?.existing) return;
+    view.dispatch(
+      closeHistory(removeLink(view.state, selection)).scrollIntoView(),
+    );
+    setOpen(false);
+    setSelection(null);
+    view.focus();
+  }
+
+  function cancel() {
+    setOpen(false);
+    if (selection) restoreLinkSelection(view, selection);
+    setSelection(null);
+  }
+
+  function openCurrentLink() {
+    if (!openLink(href)) {
+      setError("This URL cannot be opened safely.");
+    }
+  }
+
+  return (
+    <Popover.Root modal="trap-focus" onOpenChange={handleOpenChange} open={open}>
+      <Popover.Trigger
+        aria-label={active ? "Edit link" : "Add link"}
+        aria-pressed={active}
+        className="gfmd-toolbar-button"
+        data-active={active ? "" : undefined}
+        disabled={!canEdit}
+        onMouseDown={(event) => event.preventDefault()}
+        title={active ? "Edit link" : "Add link"}
+        type="button"
+      >
+        <Link2 className="gfmd-toolbar-icon" size={16} />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner align="start" sideOffset={4}>
+          <Popover.Popup
+            className="gfmd-link-popover"
+            finalFocus={false}
+            initialFocus={urlInputRef}
+          >
+            <Popover.Title className="gfmd-link-popover-title">
+              {selection?.existing ? "Edit link" : "Add link"}
+            </Popover.Title>
+            <form className="gfmd-link-form" onSubmit={apply}>
+              <label className="gfmd-link-field">
+                <span>Text</span>
+                <input
+                  aria-label="Link text"
+                  onChange={(event) => setLabel(event.target.value)}
+                  value={label}
+                />
+              </label>
+              <label className="gfmd-link-field">
+                <span>URL</span>
+                <input
+                  aria-describedby={error ? "gfmd-link-error" : undefined}
+                  aria-invalid={error ? true : undefined}
+                  aria-label="Link URL"
+                  onChange={(event) => {
+                    setHref(event.target.value);
+                    setError("");
+                  }}
+                  ref={urlInputRef}
+                  required
+                  value={href}
+                />
+              </label>
+              <label className="gfmd-link-field">
+                <span>Title (optional)</span>
+                <input
+                  aria-label="Link title"
+                  onChange={(event) => setTitle(event.target.value)}
+                  value={title}
+                />
+              </label>
+              {error ? (
+                <p className="gfmd-link-error" id="gfmd-link-error" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              <div className="gfmd-link-actions">
+                {selection?.existing ? (
+                  <>
+                    <button
+                      className="gfmd-link-button gfmd-link-button-secondary"
+                      onClick={openCurrentLink}
+                      type="button"
+                    >
+                      Open link
+                    </button>
+                    <button
+                      aria-label="Remove link"
+                      className="gfmd-link-button gfmd-link-button-danger"
+                      onClick={unlink}
+                      type="button"
+                    >
+                      <Link2Off size={14} />
+                      Unlink
+                    </button>
+                  </>
+                ) : null}
+                <span className="gfmd-link-actions-spacer" />
+                <Popover.Close
+                  className="gfmd-link-button gfmd-link-button-secondary"
+                  onClick={cancel}
+                  type="button"
+                >
+                  Cancel
+                </Popover.Close>
+                <button
+                  className="gfmd-link-button gfmd-link-button-primary"
+                  type="submit"
+                >
+                  Apply
+                </button>
+              </div>
+            </form>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
 function markAction(
   id: string,
   icon: React.ReactNode,
@@ -445,23 +637,6 @@ function hasAncestor(type: NodeType) {
     }
     return false;
   };
-}
-
-function insertLink(state: EditorState, dispatch?: EditorView["dispatch"]) {
-  if (!dispatch) return true;
-  const href = globalThis.window?.prompt?.("Link URL", "https://")?.trim();
-  if (!href) return false;
-
-  const { from, to, empty } = state.selection;
-  const label = empty ? "link" : state.doc.textBetween(from, to);
-  let tr = state.tr.insertText(label, from, to);
-  tr = tr.addMark(
-    from,
-    from + label.length,
-    gfmSchema.marks.link.create({ href, title: null }),
-  );
-  dispatch(tr.scrollIntoView());
-  return true;
 }
 
 function insertHorizontalRule(

@@ -224,11 +224,135 @@
   background: var(--gfmd-border);
 }
 
+.gfmd-link-popover {
+  z-index: 1000;
+  width: min(360px, calc(100vw - 24px));
+  padding: 12px;
+  border: 1px solid var(--gfmd-border);
+  border-radius: var(--gfmd-radius);
+  background: var(--gfmd-canvas);
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+  color: var(--gfmd-fg);
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.gfmd-link-popover-title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gfmd-link-form,
+.gfmd-link-field {
+  display: grid;
+  gap: 5px;
+}
+
+.gfmd-link-form {
+  gap: 10px;
+}
+
+.gfmd-link-field > span {
+  color: var(--gfmd-muted-fg);
+  font-weight: 600;
+}
+
+.gfmd-link-field input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid var(--gfmd-border);
+  border-radius: 4px;
+  background: var(--gfmd-canvas);
+  color: var(--gfmd-fg);
+  font: inherit;
+}
+
+.gfmd-link-field input:focus {
+  border-color: var(--gfmd-accent);
+  outline: 2px solid color-mix(in srgb, var(--gfmd-accent) 25%, transparent);
+  outline-offset: 1px;
+}
+
+.gfmd-link-field input[aria-invalid="true"] {
+  border-color: var(--gfmd-danger);
+}
+
+.gfmd-link-error {
+  margin: 0;
+  color: var(--gfmd-danger);
+}
+
+.gfmd-link-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.gfmd-link-actions-spacer {
+  flex: 1 1 auto;
+}
+
+.gfmd-link-button {
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--gfmd-border);
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font: inherit;
+  font-weight: 600;
+}
+
+.gfmd-link-button-primary {
+  border-color: var(--gfmd-accent);
+  background: var(--gfmd-accent);
+  color: #fff;
+}
+
+.gfmd-link-button-secondary,
+.gfmd-link-button-danger {
+  background: var(--gfmd-canvas);
+  color: var(--gfmd-fg);
+}
+
+.gfmd-link-button-danger {
+  color: var(--gfmd-danger);
+}
+
+.gfmd-link-button:hover {
+  filter: brightness(0.96);
+}
+
+.gfmd-link-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--gfmd-accent) 35%, transparent);
+  outline-offset: 1px;
+}
+
 .gfmd-editor-surface {
   min-height: 220px;
   padding: 16px;
   outline: none;
   white-space: pre-wrap;
+}
+
+.gfmd-editor-surface [data-gfmd-link],
+.gfmd-editor-surface [data-gfmd-empty-link] {
+  color: var(--gfmd-accent);
+  text-decoration: underline;
+  cursor: text;
+}
+
+.gfmd-editor-surface [data-gfmd-empty-link] {
+  display: inline-block;
+  min-width: 0.5em;
+  border-bottom: 1px dotted currentColor;
 }
 
 .gfmd-editor-surface p {

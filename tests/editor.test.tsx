@@ -1,13 +1,26 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { closeHistory, redo, undo } from "prosemirror-history";
-import { TextSelection, type EditorState, type Transaction } from "prosemirror-state";
+import {
+  NodeSelection,
+  TextSelection,
+  type EditorState,
+  type Transaction,
+} from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { describe, expect, it, vi } from "vitest";
 import {
   createGFMarkdownState,
   GFMarkdownEditor,
+  parseHTML,
   serializeMarkdown,
 } from "../src";
+import {
+  applyLinkEdit,
+  isLinkActive,
+  linkSelection,
+  openLink,
+  removeLink,
+} from "../src/link";
 import {
   changeListIndent,
   changeListType,
@@ -617,6 +630,349 @@ Body
     render(<GFMarkdownEditor context={context} value="**bold** *italic*" />);
 
     expect(screen.getByTitle("Clear formatting")).toBeTruthy();
+  });
+
+  it("creates a link at the cursor from the accessible link editor", async () => {
+    const onChange = vi.fn();
+    render(<GFMarkdownEditor context={context} onChange={onChange} value="" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add link" }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByLabelText("Link URL")),
+    );
+    fireEvent.change(screen.getByLabelText("Link text"), {
+      target: { value: "Documentation" },
+    });
+    fireEvent.change(screen.getByLabelText("Link URL"), {
+      target: { value: "../docs/start.md#intro" },
+    });
+    fireEvent.change(screen.getByLabelText("Link title"), {
+      target: { value: "Read the docs" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(onChange).toHaveBeenLastCalledWith(
+      '[Documentation](../docs/start.md#intro "Read the docs")',
+      expect.anything(),
+    );
+  });
+
+  it("edits the active link URL, title, and label", () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value="[Old](https://old.example)"
+      />,
+    );
+
+    const editButton = screen.getByRole("button", { name: "Edit link" });
+    expect(editButton.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(editButton);
+    fireEvent.change(screen.getByLabelText("Link text"), {
+      target: { value: "New" },
+    });
+    fireEvent.change(screen.getByLabelText("Link URL"), {
+      target: { value: "#new" },
+    });
+    fireEvent.change(screen.getByLabelText("Link title"), {
+      target: { value: "New title" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(onChange).toHaveBeenLastCalledWith(
+      '[New](#new "New title")',
+      expect.anything(),
+    );
+  });
+
+  it("cancels link edits without changing the document", () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value="[Keep](#keep)"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit link" }));
+    fireEvent.change(screen.getByLabelText("Link URL"), {
+      target: { value: "#changed" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Link URL")).toBeNull();
+  });
+
+  it("unlinks while preserving the label", () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value="[*Keep formatting*](#keep)"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit link" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove link" }));
+
+    expect(onChange).toHaveBeenLastCalledWith("*Keep formatting*", expect.anything());
+  });
+
+  it("does not navigate from editable links and uses an explicit open action", () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value="[Open](../relative/path#section)"
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Open"));
+    expect(open).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit link" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open link" }));
+    expect(open).toHaveBeenCalledWith(
+      "../relative/path#section",
+      "_blank",
+      "noopener,noreferrer",
+    );
+    open.mockRestore();
+  });
+
+  it("blocks unsafe schemes only when opening a link", () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value="[Unsafe](javascript:alert(1))"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit link" }));
+    expect((screen.getByLabelText("Link URL") as HTMLInputElement).value).toBe(
+      "javascript:alert(1)",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open link" }));
+
+    expect(open).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("cannot be opened");
+    open.mockRestore();
+  });
+
+  it("closes a pending link editor on a controlled value update", () => {
+    const { rerender } = render(
+      <GFMarkdownEditor context={context} value="[Old](#old)" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit link" }));
+    expect(screen.getByLabelText("Link URL")).toBeTruthy();
+
+    rerender(<GFMarkdownEditor context={context} value="Replacement" />);
+
+    expect(screen.queryByLabelText("Link URL")).toBeNull();
+    expect(screen.getByText("Replacement")).toBeTruthy();
+  });
+
+  it("preserves link marks when parsing clipboard HTML", () => {
+    const doc = parseHTML(
+      '<p><a href="../docs" title="Docs"><strong>Documentation</strong></a></p>',
+    );
+
+    expect(serializeMarkdown(doc)).toBe(
+      '[**Documentation**](../docs "Docs")',
+    );
+  });
+
+  it("creates, edits, and unlinks links without losing overlapping marks", () => {
+    let state = createGFMarkdownState({ context, value: "**Bold label**" });
+    const from = findTextPosition(state, "Bold label");
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, from, from + "Bold label".length),
+      ),
+    );
+    const createSelection = linkSelection(state)!;
+    state = state.apply(
+      applyLinkEdit(state, createSelection, {
+        href: "mailto:user@example.com",
+        label: "Bold label",
+        title: "",
+      }),
+    );
+    expect(serializeMarkdown(state.doc)).toBe(
+      "[**Bold label**](mailto:user@example.com)",
+    );
+
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, from + 2)),
+    );
+    expect(isLinkActive(state)).toBe(true);
+    const editSelection = linkSelection(state)!;
+    state = state.apply(
+      applyLinkEdit(state, editSelection, {
+        href: "#anchor",
+        label: "Bold link",
+        title: "Anchor",
+      }),
+    );
+    expect(serializeMarkdown(state.doc)).toBe(
+      '[**Bold link**](#anchor "Anchor")',
+    );
+
+    const unlinkSelection = linkSelection(state)!;
+    state = state.apply(removeLink(state, unlinkSelection));
+    expect(serializeMarkdown(state.doc)).toBe("**Bold link**");
+  });
+
+  it("creates and edits an empty-label link without dropping it", () => {
+    let state = createGFMarkdownState({ context, value: "" });
+    const createSelection = linkSelection(state)!;
+    state = state.apply(
+      applyLinkEdit(state, createSelection, {
+        href: "../empty",
+        label: "",
+        title: "Empty",
+      }),
+    );
+
+    expect(state.selection).toBeInstanceOf(NodeSelection);
+    expect(serializeMarkdown(state.doc)).toBe('[](../empty "Empty")');
+
+    state = state.apply(
+      applyLinkEdit(state, linkSelection(state)!, {
+        href: "#filled",
+        label: "Now visible",
+        title: "",
+      }),
+    );
+    expect(serializeMarkdown(state.doc)).toBe("[Now visible](#filled)");
+  });
+
+  it("turns an existing link into an empty-label link without data loss", () => {
+    let state = createGFMarkdownState({ context, value: "[Old](#old)" });
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, 2)),
+    );
+    state = state.apply(
+      applyLinkEdit(state, linkSelection(state)!, {
+        href: "#empty",
+        label: "",
+        title: "Still linked",
+      }),
+    );
+
+    expect(state.selection).toBeInstanceOf(NodeSelection);
+    expect(serializeMarkdown(state.doc)).toBe('[](#empty "Still linked")');
+  });
+
+  it("disables link editing for non-text node selections", () => {
+    const state = createGFMarkdownState({
+      context,
+      value: "![Image](image.png)",
+    });
+    const imagePosition = 1;
+    const selected = state.apply(
+      state.tr.setSelection(NodeSelection.create(state.doc, imagePosition)),
+    );
+
+    expect(linkSelection(selected)).toBeNull();
+  });
+
+  it("does not expose editable link destinations as native navigation targets", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value="[Unsafe](javascript:alert(1))"
+      />,
+    );
+
+    const linkText = screen.getByText("Unsafe");
+    expect(linkText.tagName).toBe("SPAN");
+    expect(linkText.getAttribute("href")).toBeNull();
+    expect(linkText.getAttribute("data-href")).toBe("javascript:alert(1)");
+  });
+
+  it("keeps surrounding nested-list and table structure during link edits", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: `- parent
+  - [nested](#old)
+
+| Link |
+| ---- |
+| [cell](../old) |`,
+    });
+    const before = state.doc.toJSON();
+    const nestedPos = findTextPosition(state, "nested");
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, nestedPos + 2)),
+    );
+    state = state.apply(
+      applyLinkEdit(state, linkSelection(state)!, {
+        href: "#new",
+        label: "nested",
+        title: "",
+      }),
+    );
+
+    expect(state.doc.firstChild?.firstChild?.lastChild?.type.name).toBe(
+      "bullet_list",
+    );
+    expect(state.doc.child(1).type.name).toBe("table");
+    expect(state.doc.child(1).toJSON()).toEqual(before.content[1]);
+    expect(serializeMarkdown(state.doc)).toContain("[nested](#new)");
+    expect(
+      createGFMarkdownState({
+        context,
+        value: serializeMarkdown(state.doc),
+      }).doc.toJSON(),
+    ).toEqual(state.doc.toJSON());
+  });
+
+  it("supports undo and redo for a link edit", () => {
+    let state = createGFMarkdownState({ context, value: "[Old](#old)" });
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, 2)),
+    );
+    state = state.apply(
+      applyLinkEdit(state, linkSelection(state)!, {
+        href: "#new",
+        label: "New",
+        title: "",
+      }),
+    );
+    expect(serializeMarkdown(state.doc)).toBe("[New](#new)");
+
+    expect(
+      undo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(serializeMarkdown(state.doc)).toBe("[Old](#old)");
+    expect(
+      redo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(serializeMarkdown(state.doc)).toBe("[New](#new)");
+  });
+
+  it("allows relative, anchor, mailto, and unusual destinations to open safely", () => {
+    const opener = vi.fn(() => null);
+    for (const href of [
+      "../docs/read me.md",
+      "#heading",
+      "mailto:user@example.com",
+      "github-windows://openRepo/example",
+    ]) {
+      expect(openLink(href, opener)).toBe(true);
+    }
+    expect(opener).toHaveBeenCalledTimes(4);
   });
 
   it("indents task items in mixed lists", () => {
