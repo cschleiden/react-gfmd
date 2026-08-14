@@ -11,7 +11,6 @@ import {
 import type {
   Blockquote,
   Code,
-  Definition,
   FootnoteReference,
   Html,
   Image,
@@ -22,6 +21,7 @@ import type {
   Nodes as MdastNode,
   Parent as MdastParent,
   PhrasingContent,
+  Root,
   Table,
   TableCell,
   TableRow,
@@ -33,6 +33,17 @@ import remarkParse from "remark-parse";
 import remarkStringify from "remark-stringify";
 import { unified } from "unified";
 
+import {
+  createRemarkDetails,
+  detailsToMdast,
+  parseDetails,
+  parseDetailsSummary,
+} from "./features/details";
+import {
+  isPhrasingContent,
+  type FromProseMirrorState,
+  type HandlerState,
+} from "./mdast-utils";
 import { gfmSchema } from "./schema";
 
 const subscriptInlineTokenPattern = /@@GFMD_SUB\((.*?)\)@@/;
@@ -41,11 +52,12 @@ const inlineTokenPattern = new RegExp(
   `${subscriptInlineTokenPattern.source}|${superscriptInlineTokenPattern.source}`,
   "g",
 );
-
 const markdownHandlers = {
   paragraph: toPmNode(gfmSchema.nodes.paragraph),
   heading: toPmNode(gfmSchema.nodes.heading, (node) => ({ level: node.depth })),
   blockquote: parseBlockquote,
+  details: parseDetails,
+  detailsSummary: parseDetailsSummary,
   list: parseList,
   listItem: (node: ListItem, _parent, state) =>
     (node.checked === null || node.checked === undefined
@@ -89,6 +101,7 @@ const markdownHandlers = {
 const markdownParser = unified()
   .use(remarkParse)
   .use(remarkGfm)
+  .use(createRemarkDetails(parseSummaryMarkdown))
   .use(remarkProseMirror, {
     schema: gfmSchema,
     handlers: markdownHandlers,
@@ -156,6 +169,9 @@ const proseMirrorNodeHandlers: FromProseMirrorOptions<
     identifier: node.attrs.identifier,
     label: node.attrs.label ?? node.attrs.identifier,
   })),
+  details: (node, parent, state) =>
+    detailsToMdast(node, parent, state, stringifyMarkdownTree),
+  details_summary: () => null,
   table: (node, _parent, state) =>
     ({
       type: "table",
@@ -198,6 +214,8 @@ const proseMirrorMarkHandlers: FromProseMirrorOptions<
   })),
 };
 
+const summaryParser = unified().use(remarkParse).use(remarkGfm);
+
 export function parseWithRemark(markdown: string) {
   const normalizedMarkdown = markdown.replace(/\r\n?/g, "\n");
   return markdownParser.processSync(encodeInlineHtmlMarks(normalizedMarkdown))
@@ -211,9 +229,11 @@ export function serializeWithRemark(doc: ProseMirrorNode) {
     markHandlers: proseMirrorMarkHandlers,
   });
 
-  const markdown = markdownStringifier.stringify(tree).trimEnd();
+  return stringifyMarkdownTree(tree).trimEnd();
+}
 
-  return restoreEscapedCustomTokens(markdown);
+function stringifyMarkdownTree(tree: Root) {
+  return restoreEscapedCustomTokens(markdownStringifier.stringify(tree));
 }
 
 export function parseInlineText(text: string): ProseMirrorNode[] {
@@ -423,24 +443,15 @@ function tableCellChildren(
     });
 }
 
-function isPhrasingContent(node: MdastNode): node is PhrasingContent {
-  return ![
-    "blockquote",
-    "break",
-    "code",
-    "definition",
-    "footnoteDefinition",
-    "heading",
-    "list",
-    "listItem",
-    "paragraph",
-    "root",
-    "table",
-    "tableRow",
-    "tableCell",
-    "thematicBreak",
-    "yaml",
-  ].includes(node.type);
+function parseSummaryMarkdown(value: string): PhrasingContent[] {
+  const tree = summaryParser.parse(encodeInlineHtmlMarks(value.trim()));
+  const firstChild = tree.children[0];
+
+  if (firstChild?.type === "paragraph") {
+    return firstChild.children;
+  }
+
+  return value.trim() ? [{ type: "text", value: value.trim() }] : [];
 }
 
 function mdastInlineText(nodes: MdastNode[]): string {
@@ -505,17 +516,4 @@ function escapeHtml(value: string) {
 
 function restoreEscapedCustomTokens(markdown: string) {
   return markdown.replace(/\\#(?=\d)/g, "#");
-}
-
-interface HandlerState {
-  all: (node: MdastNode) => ProseMirrorNode[];
-  one: (
-    node: MdastNode,
-    parent: MdastParent | undefined,
-  ) => ProseMirrorNode | ProseMirrorNode[] | null;
-  definitionById?: Map<string, Definition>;
-}
-
-interface FromProseMirrorState {
-  all: (node: ProseMirrorNode) => MdastNode[];
 }

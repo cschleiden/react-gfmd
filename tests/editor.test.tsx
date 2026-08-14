@@ -52,6 +52,42 @@ describe("GFMarkdownEditor", () => {
     expect((doneTask as HTMLInputElement).checked).toBe(true);
   });
 
+  it("renders details blocks as editable structured content", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={`<details open>
+<summary>More info</summary>
+
+Body
+
+</details>`}
+      />,
+    );
+
+    const details = document.querySelector("details");
+    expect(details?.open).toBe(true);
+    expect(screen.getByText("More info").tagName).toBe("SUMMARY");
+    expect(screen.getByText("Body")).toBeTruthy();
+  });
+
+  it("renders details blocks without explicit summaries", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={`<details>
+
+# Hello
+
+</details>`}
+      />,
+    );
+
+    expect(document.querySelector("details")).toBeTruthy();
+    expect(screen.getByText("Details").tagName).toBe("SUMMARY");
+    expect(screen.getByRole("heading", { name: "Hello" })).toBeTruthy();
+  });
+
   it("toggles unchecked task list checkboxes", async () => {
     const onChange = vi.fn();
     render(

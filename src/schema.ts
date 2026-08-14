@@ -2,6 +2,10 @@ import { type NodeSpec, Schema } from "prosemirror-model";
 import { schema as basicSchema } from "prosemirror-schema-basic";
 import { tableNodes } from "prosemirror-tables";
 import {
+  detailsNodeSpec,
+  detailsSummaryNodeSpec,
+} from "./features/details/schema";
+import {
   bulletListNodeSpec,
   listItemNodeSpec,
   orderedListNodeSpec,
@@ -52,6 +56,8 @@ export const gfmSchema = new Schema({
       ],
     })
     .append({
+      details: detailsNodeSpec,
+      details_summary: detailsSummaryNodeSpec,
       footnote_definition: blockContainerNode(
         "section",
         "data-gfmd-footnote-definition",

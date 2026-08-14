@@ -141,4 +141,88 @@ const value = 1;
 | :---- | :----: | -----------------------: |
 | **A** |   \`B\`  | [C](https://example.com) |`);
   });
+
+  it("round-trips details blocks with markdown body content", () => {
+    const markdown = `<details>
+<summary>More info</summary>
+
+This is **markdown**.
+
+- item
+
+</details>`;
+
+    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
+  });
+
+  it("preserves open details blocks and inline summary markdown", () => {
+    const markdown = `<details open>
+<summary>**More** info</summary>
+
+Body
+
+</details>`;
+
+    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
+  });
+
+  it("handles inline HTML in details summaries without aborting parsing", () => {
+    const markdown = `<details>
+<summary><code>npm install</code> instructions</summary>
+
+Body
+
+</details>`;
+    const doc = parseMarkdown(markdown);
+
+    expect(doc.firstChild?.firstChild?.textContent).toBe(
+      "<code>npm install</code> instructions",
+    );
+    expect(serializeMarkdown(doc)).toBe(`<details>
+<summary>\\<code>npm install\\</code> instructions</summary>
+
+Body
+
+</details>`);
+  });
+
+  it("supports details blocks without an explicit summary", () => {
+    const markdown = `<details>
+
+# Hello
+
+Body
+
+</details>`;
+
+    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
+  });
+
+  it("supports nested details blocks when remark combines closing tags", () => {
+    const markdown = `<details>
+<summary>Outer collapse</summary>
+
+<details>
+<summary>Inner collapse</summary>
+
+\`\`\`js
+const x = "code inside nested details";
+\`\`\`
+
+</details>
+
+</details>`;
+
+    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
+  });
+
+  it("leaves malformed details blocks as raw text fallback", () => {
+    const markdown = `<details>
+
+Body without a close`;
+
+    expect(serializeMarkdown(parseMarkdown(markdown))).toBe(`\\<details>
+
+Body without a close`);
+  });
 });

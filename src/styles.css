@@ -244,6 +244,27 @@
   margin-bottom: 0;
 }
 
+.gfmd-editor-surface details {
+  margin: 12px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--gfmd-border);
+  border-radius: var(--gfmd-radius);
+  background: var(--gfmd-canvas);
+}
+
+.gfmd-editor-surface summary {
+  cursor: text;
+  font-weight: 600;
+}
+
+.gfmd-editor-surface summary + * {
+  margin-top: 12px;
+}
+
+.gfmd-editor-surface details > :last-child {
+  margin-bottom: 0;
+}
+
 .gfmd-code-block {
   margin: 12px 0;
   border: 1px solid var(--gfmd-border);
