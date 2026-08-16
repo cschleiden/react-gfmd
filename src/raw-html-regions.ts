@@ -496,7 +496,16 @@ function trailingAfterMatch(
 
     return { trailing: null, regionEnd: childEnd };
   }
-  if (child.type !== "paragraph") return null;
+  if (child.type !== "paragraph") {
+    return {
+      trailing: trailingParentAfterHtml(
+        child,
+        htmlNode,
+        token,
+        source,
+      ) as RootContent | null,
+    };
+  }
 
   const htmlIndex = child.children.indexOf(htmlNode);
   if (htmlIndex === -1) {
@@ -523,6 +532,54 @@ function trailingAfterMatch(
       type: "paragraph",
       children: trailingChildren,
     },
+  };
+}
+
+function trailingParentAfterHtml(
+  node: MdastNode,
+  htmlNode: Extract<MdastNode, { type: "html" }>,
+  token: PositionedHtmlToken,
+  source: string,
+): MdastNode | null {
+  if (!("children" in node)) return null;
+
+  const childIndex = node.children.findIndex(
+    (child) => child === htmlNode || containsNode(child, htmlNode),
+  );
+  if (childIndex === -1) return null;
+
+  const matchedChild = node.children[childIndex];
+  const nestedTrailing =
+    matchedChild === htmlNode
+      ? trailingHtmlNodeAfterToken(htmlNode, token, source)
+      : trailingParentAfterHtml(matchedChild, htmlNode, token, source);
+  const children = [
+    ...(nestedTrailing ? [nestedTrailing] : []),
+    ...node.children.slice(childIndex + 1),
+  ];
+  if (children.length === 0) return null;
+
+  return { ...node, children, position: undefined } as MdastNode;
+}
+
+function containsNode(node: MdastNode, target: MdastNode): boolean {
+  return (
+    node === target ||
+    ("children" in node && node.children.some((child) => containsNode(child, target)))
+  );
+}
+
+function trailingHtmlNodeAfterToken(
+  node: Extract<MdastNode, { type: "html" }>,
+  token: PositionedHtmlToken,
+  source: string,
+): MdastNode | null {
+  const end = nodeEndOffset(node as RootContent);
+  if (end === null || token.absoluteEnd >= end) return null;
+
+  return {
+    type: "html",
+    value: source.slice(token.absoluteEnd, end),
   };
 }
 

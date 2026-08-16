@@ -330,11 +330,11 @@ function imageReferenceMarkdown(node: ImageReference) {
 
 function parseHtml(node: Html, parent: MdastParent | undefined) {
   const image = htmlImageNode(node.value);
+  const inline = isInlineHtmlParent(parent);
   if (!image) {
-    const type =
-      parent?.type === "paragraph"
-        ? gfmSchema.nodes.raw_inline
-        : gfmSchema.nodes.raw_block;
+    const type = inline
+      ? gfmSchema.nodes.raw_inline
+      : gfmSchema.nodes.raw_block;
     const region = (
       node.data as
         | {
@@ -353,9 +353,25 @@ function parseHtml(node: Html, parent: MdastParent | undefined) {
     });
   }
 
-  return parent?.type === "paragraph"
+  return inline
     ? image
     : gfmSchema.nodes.paragraph.create(null, image);
+}
+
+function isInlineHtmlParent(parent: MdastParent | undefined) {
+  return Boolean(
+    parent &&
+      [
+        "delete",
+        "detailsSummary",
+        "emphasis",
+        "heading",
+        "link",
+        "paragraph",
+        "strong",
+        "tableCell",
+      ].includes(parent.type),
+  );
 }
 
 function htmlImageNode(html: string) {
@@ -631,7 +647,7 @@ function createRemarkInlineHtmlMarks() {
     const source = String(file.value);
 
     visitMdastParents(tree, (parent) => {
-      if (parent.type !== "paragraph") return;
+      if (!isInlineHtmlParent(parent)) return;
 
       const children = parent.children;
       for (let index = 0; index < children.length; index += 1) {

@@ -133,6 +133,22 @@ describe("markdown", () => {
     );
   });
 
+  it("preserves a raw HTML image nested inside a link", () => {
+    const markdown =
+      `[<img src="image.png" alt="Build">](https://example.com "Link")`;
+    const doc = parseMarkdown(markdown);
+    const image = doc.firstChild?.firstChild;
+
+    expect(image?.type.name).toBe("image");
+    expect(image?.marks.map((mark) => mark.type.name)).toEqual(["link"]);
+    const serialized = serializeMarkdown(doc);
+    expect(serialized).toBe(
+      `[![Build](image.png)](https://example.com "Link")`,
+    );
+    expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
+    expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
+  });
+
   it.each([
     "<!-- keep me -->",
     `<div class="note">
@@ -435,6 +451,26 @@ Quoted **Markdown**
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
     });
 
+    it("preserves blockquote content after a nested closing tag", () => {
+      const markdown = `<div>
+
+> inside
+>
+> </div>
+>
+> after`;
+      const doc = parseMarkdown(markdown);
+      const serialized = serializeMarkdown(doc);
+
+      expect(doc.childCount).toBe(2);
+      expect(doc.firstChild?.type.name).toBe("raw_block");
+      expect(doc.lastChild?.type.name).toBe("blockquote");
+      expect(doc.lastChild?.textContent).toBe("after");
+      expect(serialized).toContain("after");
+      expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
+      expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
+    });
+
     it("keeps unsupported inline HTML as separate raw_inline boundaries", () => {
       const markdown = "Before <span>**rich**</span> after.";
       const doc = parseMarkdown(markdown);
@@ -556,6 +592,26 @@ Body
     expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
   });
 
+  it.each([
+    "# H<sub>2</sub>O",
+    "[H<sub>2</sub>O](https://example.com)",
+    "| Formula |\n| ------- |\n| H<sub>2</sub>O |",
+  ])("keeps inline HTML marks editable in every phrasing parent: %s", (markdown) => {
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+    let subscriptCount = 0;
+
+    doc.descendants((node) => {
+      subscriptCount += node.marks.filter(
+        (mark) => mark.type.name === "subscript",
+      ).length;
+    });
+
+    expect(subscriptCount).toBe(1);
+    expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
+    expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
+  });
+
   it("round-trips common block markdown", () => {
     const markdown = `# Heading
 
@@ -591,6 +647,30 @@ const value = 1;
 [^1]: Footnote body.`;
 
     expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
+  });
+
+  it("preserves a balanced raw HTML region inside a footnote definition", () => {
+    const markdown = `See note[^raw].
+
+[^raw]: <div class="note">
+
+    **opaque footnote Markdown**
+
+    </div>`;
+    const doc = parseMarkdown(markdown);
+    const definition = doc.lastChild;
+
+    expect(definition?.type.name).toBe("footnote_definition");
+    expect(definition?.childCount).toBe(1);
+    expect(definition?.firstChild?.type.name).toBe("raw_block");
+    expect(definition?.firstChild?.attrs.value).toBe(`<div class="note">
+
+**opaque footnote Markdown**
+
+</div>`);
+    const serialized = serializeMarkdown(doc);
+    expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
+    expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
   });
 
   it("preserves footnote semantics and converges with multiple references and blocks", () => {
