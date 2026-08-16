@@ -204,26 +204,50 @@ function rawMarkdownNodeSpec(inline: boolean): NodeSpec {
     selectable: true,
     attrs: {
       value: { default: "" },
+      kind: { default: "markdown" },
+      tagName: { default: null },
+      malformed: { default: false },
     },
     parseDOM: [
       {
         tag: `${tag}[${marker}]`,
+        priority: 1000,
         getAttrs: (node) => {
           if (!(node instanceof HTMLElement)) return false;
-          return { value: node.getAttribute("data-source") ?? node.textContent };
+          return {
+            value: node.getAttribute("data-source") ?? node.textContent,
+            kind: node.getAttribute("data-raw-kind") ?? "markdown",
+            tagName: node.getAttribute("data-tag-name"),
+            malformed: node.getAttribute("data-malformed") === "true",
+          };
         },
       },
     ],
-    toDOM: (node) => [
-      tag,
-      {
-        [marker]: "",
-        "data-source": node.attrs.value,
-        contenteditable: "false",
-        "aria-label": "Unsupported Markdown source",
-      },
-      node.attrs.value,
-    ],
+    toDOM: (node) => {
+      const isHtmlRegion = node.attrs.kind === "html_region";
+      const regionDescription = node.attrs.malformed
+        ? "malformed or unclosed region"
+        : "region";
+      const label = isHtmlRegion
+        ? `Preserved unsupported HTML <${node.attrs.tagName}> ${regionDescription}`
+        : node.attrs.kind === "html"
+          ? "Unsupported HTML source"
+          : "Unsupported Markdown source";
+
+      return [
+        tag,
+        {
+          [marker]: "",
+          "data-source": node.attrs.value,
+          "data-raw-kind": node.attrs.kind,
+          "data-tag-name": node.attrs.tagName,
+          "data-malformed": String(node.attrs.malformed),
+          contenteditable: "false",
+          "aria-label": label,
+        },
+        node.attrs.value,
+      ];
+    },
   };
 }
 

@@ -45,6 +45,10 @@ import {
   type HandlerState,
 } from "./mdast-utils";
 import { fromProseMirrorStable } from "./from-prosemirror";
+import {
+  createRemarkRawHtmlRegions,
+  isStandaloneHtmlElement,
+} from "./raw-html-regions";
 import { gfmSchema } from "./schema";
 
 const subscriptInlineTokenPattern = /@@GFMD_SUB\((.*?)\)@@/;
@@ -103,7 +107,10 @@ const markdownHandlers = {
 const markdownParser = unified()
   .use(remarkParse)
   .use(remarkGfm)
+  .use(createRemarkEmptyTaskItems)
   .use(createRemarkDetails(parseSummaryMarkdown))
+  .use(createRemarkRawHtmlRegions())
+  .use(createRemarkInlineHtmlMarks)
   .use(remarkProseMirror, {
     schema: gfmSchema,
     handlers: markdownHandlers,
@@ -140,10 +147,7 @@ const proseMirrorNodeHandlers: FromProseMirrorOptions<
       spread: !node.attrs.tight,
       children: state.all(node),
     }) as List,
-  list_item: fromPmNode("listItem", (node) => ({
-    checked: null,
-    spread: node.attrs.spread,
-  })),
+  list_item: listItemToMdast,
   task_list_item: taskListItemToMdast,
   code_block: (node) => ({
     type: "code",
@@ -225,9 +229,7 @@ const summaryParser = unified().use(remarkParse).use(remarkGfm);
 
 export function parseWithRemark(markdown: string) {
   const normalizedMarkdown = markdown.replace(/\r\n?/g, "\n");
-  return markdownParser.processSync(
-    encodeInlineHtmlMarks(encodeEmptyTaskItems(normalizedMarkdown)),
-  ).result as ProseMirrorNode;
+  return markdownParser.processSync(normalizedMarkdown).result as ProseMirrorNode;
 }
 
 export function serializeWithRemark(doc: ProseMirrorNode) {
@@ -333,7 +335,22 @@ function parseHtml(node: Html, parent: MdastParent | undefined) {
       parent?.type === "paragraph"
         ? gfmSchema.nodes.raw_inline
         : gfmSchema.nodes.raw_block;
-    return type.create({ value: node.value });
+    const region = (
+      node.data as
+        | {
+            gfmdRawHtmlRegion?: {
+              tagName: string;
+              malformed: boolean;
+            };
+          }
+        | undefined
+    )?.gfmdRawHtmlRegion;
+    return type.create({
+      value: node.value,
+      kind: region ? "html_region" : "html",
+      tagName: region?.tagName ?? null,
+      malformed: region?.malformed ?? false,
+    });
   }
 
   return parent?.type === "paragraph"
@@ -343,7 +360,7 @@ function parseHtml(node: Html, parent: MdastParent | undefined) {
 
 function htmlImageNode(html: string) {
   const trimmed = html.trim();
-  if (!/^<img[\s>/]/i.test(trimmed)) return null;
+  if (!isStandaloneHtmlElement(trimmed, "img")) return null;
   const src = htmlAttribute(trimmed, "src");
   if (src === null) return null;
 
@@ -379,6 +396,29 @@ function taskListItemToMdast(
   return {
     type: "listItem",
     checked: node.attrs.checked,
+    spread: node.attrs.spread,
+    children: children as ListItem["children"],
+  };
+}
+
+function listItemToMdast(
+  node: ProseMirrorNode,
+  _parent: ProseMirrorNode | undefined,
+  state: FromProseMirrorState,
+): ListItem {
+  const children = state.all(node);
+  if (
+    children[0]?.type === "paragraph" &&
+    children[0].children.length === 0 &&
+    node.childCount > 1 &&
+    node.child(1).type === gfmSchema.nodes.raw_block
+  ) {
+    children.shift();
+  }
+
+  return {
+    type: "listItem",
+    checked: null,
     spread: node.attrs.spread,
     children: children as ListItem["children"],
   };
@@ -553,11 +593,90 @@ function encodeInlineHtmlMarks(markdown: string) {
     );
 }
 
-function encodeEmptyTaskItems(markdown: string) {
-  return markdown.replace(
-    /^([ \t]*(?:[-+*]|\d+[.)])[ \t]+\[[ xX]\])(?=[ \t]*$)/gm,
-    `$1 ${emptyTaskToken}`,
-  );
+function createRemarkEmptyTaskItems() {
+  return (tree: Root, file: { value: unknown }) => {
+    const source = String(file.value);
+    visitMdastParents(tree, (parent) => {
+      if (parent.type !== "listItem") return;
+      const item = parent as ListItem;
+      if (item.checked !== null) return;
+      const paragraph = item.children[0];
+      if (
+        paragraph?.type !== "paragraph" ||
+        paragraph.children.length !== 1 ||
+        paragraph.children[0].type !== "text"
+      ) {
+        return;
+      }
+
+      const match = paragraph.children[0].value.match(/^\[([ xX])\]$/);
+      if (!match) return;
+      const sourceStart = paragraph.position?.start.offset;
+      const sourceEnd = paragraph.position?.end.offset;
+      if (
+        typeof sourceStart !== "number" ||
+        typeof sourceEnd !== "number" ||
+        source.slice(sourceStart, sourceEnd) !== paragraph.children[0].value
+      ) {
+        return;
+      }
+      item.checked = match[1].toLowerCase() === "x";
+      paragraph.children = [];
+    });
+  };
+}
+
+function createRemarkInlineHtmlMarks() {
+  return (tree: Root, file: { value: unknown }) => {
+    const source = String(file.value);
+
+    visitMdastParents(tree, (parent) => {
+      if (parent.type !== "paragraph") return;
+
+      const children = parent.children;
+      for (let index = 0; index < children.length; index += 1) {
+        const child = children[index];
+        if (child.type !== "html") continue;
+
+        const match = child.value.trim().match(/^<(sub|sup)>$/i);
+        if (!match) continue;
+        const tagName = match[1].toLowerCase();
+        const closeIndex = children.findIndex(
+          (candidate, candidateIndex) =>
+            candidateIndex > index &&
+            candidate.type === "html" &&
+            candidate.value.trim().toLowerCase() === `</${tagName}>`,
+        );
+        if (closeIndex === -1) continue;
+
+        const contentStart = child.position?.end.offset;
+        const contentEnd = children[closeIndex].position?.start.offset;
+        if (
+          typeof contentStart !== "number" ||
+          typeof contentEnd !== "number"
+        ) {
+          continue;
+        }
+
+        const tokenName = tagName === "sub" ? "SUB" : "SUP";
+        const value = source.slice(contentStart, contentEnd);
+        children.splice(index, closeIndex - index + 1, {
+          type: "text",
+          value: `@@GFMD_${tokenName}(${encodeInlineStylePayload(value)})@@`,
+        });
+      }
+    });
+  };
+}
+
+function visitMdastParents(
+  parent: MdastParent | Root,
+  visitor: (parent: MdastParent | Root) => void,
+) {
+  visitor(parent);
+  for (const child of parent.children) {
+    if ("children" in child) visitMdastParents(child, visitor);
+  }
 }
 
 function encodeInlineStylePayload(value: string) {

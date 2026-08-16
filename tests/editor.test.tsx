@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { closeHistory, redo, undo } from "prosemirror-history";
+import { DOMSerializer } from "prosemirror-model";
 import {
   NodeSelection,
   TextSelection,
@@ -27,6 +28,10 @@ import {
   changeListType,
   currentListKind,
 } from "../src/lists/commands";
+import {
+  parseMarkdownClipboardText,
+  serializeMarkdownClipboardSlice,
+} from "../src/clipboard";
 
 const context = { owner: "cschleiden", repo: "react-gfmd" };
 
@@ -100,6 +105,111 @@ Body
     expect(document.querySelector("details")).toBeTruthy();
     expect(screen.getByText("Details").tagName).toBe("SUMMARY");
     expect(screen.getByRole("heading", { name: "Hello" })).toBeTruthy();
+  });
+
+  it("renders a balanced unsupported HTML region as one accessible atomic block", () => {
+    const markdown = `<div align="center">
+
+**Markdown inside raw HTML should not disappear.**
+
+</div>`;
+    render(<GFMarkdownEditor context={context} value={markdown} />);
+
+    const region = screen.getByLabelText(
+      "Preserved unsupported HTML <div> region",
+    );
+    expect(region.getAttribute("contenteditable")).toBe("false");
+    expect(region.getAttribute("data-raw-kind")).toBe("html_region");
+    expect(region.textContent).toBe(markdown);
+    expect(document.querySelectorAll("[data-gfmd-raw-block]")).toHaveLength(1);
+    expect(region.querySelector("strong")).toBeNull();
+  });
+
+  it("selects, copies, pastes, deletes, and restores a raw HTML region atomically", () => {
+    const markdown = `<div>
+
+**opaque**
+
+</div>`;
+    let state = createGFMarkdownState({ context, value: markdown });
+    const raw = state.doc.firstChild!;
+
+    expect(raw.type.name).toBe("raw_block");
+    state = state.apply(
+      state.tr.setSelection(NodeSelection.create(state.doc, 0)),
+    );
+    expect(state.selection).toBeInstanceOf(NodeSelection);
+    expect((state.selection as NodeSelection).node.eq(raw)).toBe(true);
+    expect(serializeMarkdownClipboardSlice(state.selection.content())).toBe(markdown);
+
+    const pasted = parseMarkdownClipboardText(markdown);
+    expect(pasted.content.childCount).toBe(1);
+    expect(pasted.content.firstChild?.toJSON()).toEqual(raw.toJSON());
+
+    state = state.apply(closeHistory(state.tr.deleteSelection()));
+    expect(serializeMarkdown(state.doc)).toBe("");
+    expect(
+      undo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(serializeMarkdown(state.doc)).toBe(markdown);
+    expect(
+      redo(state, (transaction) => {
+        state = state.apply(transaction);
+      }),
+    ).toBe(true);
+    expect(serializeMarkdown(state.doc)).toBe("");
+  });
+
+  it("preserves raw region metadata through the HTML clipboard DOM path", () => {
+    const markdown = `<div>
+
+opaque
+
+</div>`;
+    const raw = createGFMarkdownState({ context, value: markdown }).doc.firstChild!;
+    const container = document.createElement("div");
+    container.appendChild(
+      DOMSerializer.fromSchema(gfmSchema).serializeNode(raw),
+    );
+
+    const reparsed = parseHTML(container.innerHTML).firstChild;
+    expect(reparsed?.toJSON()).toEqual(raw.toJSON());
+    expect(reparsed?.attrs).toMatchObject({
+      kind: "html_region",
+      tagName: "div",
+      malformed: false,
+    });
+  });
+
+  it("replaces an atomic raw HTML region on controlled value updates", () => {
+    const first = `<div>
+
+First
+
+</div>`;
+    const second = `<section>
+
+Second
+
+</section>`;
+    const rendered = render(
+      <GFMarkdownEditor context={context} value={first} />,
+    );
+
+    expect(
+      screen.getByLabelText("Preserved unsupported HTML <div> region"),
+    ).toBeTruthy();
+    rendered.rerender(<GFMarkdownEditor context={context} value={second} />);
+
+    expect(
+      screen.queryByLabelText("Preserved unsupported HTML <div> region"),
+    ).toBeNull();
+    expect(
+      screen.getByLabelText("Preserved unsupported HTML <section> region")
+        .textContent,
+    ).toBe(second);
   });
 
   it("toggles unchecked task list checkboxes", async () => {
