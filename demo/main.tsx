@@ -162,17 +162,22 @@ function App() {
     <main>
       <header>
         <h1>React GFMD</h1>
-        <p>Edit Markdown as rich text without losing its structure.</p>
+        <p>Edit rich text and inspect the Markdown source as it updates.</p>
       </header>
-      <GFMarkdownEditor
-        context={{ owner: "cschleiden", repo: "react-gfmd" }}
-        onChange={setMarkdown}
-        value={markdown}
-      />
-      <section>
-        <h2>Markdown</h2>
-        <pre>{markdown}</pre>
-      </section>
+      <div className="demo-workspace">
+        <section className="demo-pane">
+          <h2>Rich editor</h2>
+          <GFMarkdownEditor
+            context={{ owner: "cschleiden", repo: "react-gfmd" }}
+            onChange={setMarkdown}
+            value={markdown}
+          />
+        </section>
+        <section className="demo-pane">
+          <h2>Raw Markdown</h2>
+          <pre className="demo-markdown">{markdown}</pre>
+        </section>
+      </div>
     </main>
   );
 }
