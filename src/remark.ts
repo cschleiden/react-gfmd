@@ -34,6 +34,11 @@ import remarkStringify from "remark-stringify";
 import { unified } from "unified";
 
 import {
+  alertToMdast,
+  createRemarkGitHubAlerts,
+  parseAlert,
+} from "./features/alerts/markdown";
+import {
   createRemarkDetails,
   detailsToMdast,
   parseDetails,
@@ -80,6 +85,7 @@ const markdownHandlers = {
   paragraph: toPmNode(gfmSchema.nodes.paragraph),
   heading: toPmNode(gfmSchema.nodes.heading, (node) => ({ level: node.depth })),
   blockquote: parseBlockquote,
+  githubAlert: parseAlert,
   details: parseDetails,
   detailsSummary: parseDetailsSummary,
   emojiShortcode: parseEmojiShortcode,
@@ -132,6 +138,7 @@ const markdownHandlers = {
 const markdownParser = unified()
   .use(remarkParse)
   .use(remarkGfm)
+  .use(createRemarkGitHubAlerts())
   .use(createRemarkEmojiShortcodes())
   .use(createRemarkEmptyTaskItems)
   .use(createRemarkDetails(parseSummaryMarkdown))
@@ -159,6 +166,7 @@ const proseMirrorNodeHandlers: FromProseMirrorOptions<
   paragraph: fromPmNode("paragraph"),
   heading: fromPmNode("heading", (node) => ({ depth: node.attrs.level })),
   blockquote: fromPmNode("blockquote"),
+  alert: alertToMdast,
   bullet_list: (node, _parent, state) =>
     ({
       type: "list",
@@ -770,5 +778,9 @@ function escapeHtml(value: string) {
 function restoreEscapedCustomTokens(markdown: string) {
   return markdown
     .replace(new RegExp(`[ \\t]*${emptyTaskToken}(?=\\n|$)`, "g"), "")
+    .replace(
+      /^((?:[ \t]*>[ \t]*)+)\\(\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\])(?=\n|$)/gim,
+      "$1$2",
+    )
     .replace(/\\#(?=\d)/g, "#");
 }

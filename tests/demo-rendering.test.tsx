@@ -58,6 +58,10 @@ function renderingFingerprint(root: HTMLElement) {
       )
       .map(listFingerprint),
     blockquotes: elements(comparable, "blockquote").map(text),
+    alerts: elements<HTMLElement>(
+      comparable,
+      "[data-gfmd-alert], .markdown-alert",
+    ).map(alertFingerprint),
     strongText: elements(comparable, "strong").map(text),
     table: elements(comparable, "table tr").map((row) =>
       elements(row, ":scope > th, :scope > td").map(text),
@@ -150,19 +154,23 @@ function materializePreservedHtml(root: HTMLElement) {
 
 function normalizeGitHubRendering(root: HTMLElement) {
   root.querySelectorAll("svg").forEach((svg) => svg.remove());
-  root.querySelectorAll<HTMLElement>(".markdown-alert").forEach((alert) => {
-    const kind = [...alert.classList]
-      .find((className) => className.startsWith("markdown-alert-"))
-      ?.slice("markdown-alert-".length);
-    const title = alert.querySelector<HTMLElement>(".markdown-alert-title");
-    if (title) title.textContent = `[!${kind?.toUpperCase()}]`;
-    const blockquote = document.createElement("blockquote");
-    blockquote.append(...alert.childNodes);
-    alert.replaceWith(blockquote);
-  });
   root.querySelectorAll<HTMLElement>(".issue-link").forEach((link) => {
     link.textContent = link.getAttribute("href") ?? "";
   });
+}
+
+function alertFingerprint(alert: HTMLElement) {
+  const kind =
+    alert.dataset.alertKind ??
+    [...alert.classList]
+      .find((className) => className.startsWith("markdown-alert-"))
+      ?.slice("markdown-alert-".length);
+  const content = alert.cloneNode(true) as HTMLElement;
+  content
+    .querySelector(".gfmd-alert-title, .markdown-alert-title")
+    ?.remove();
+
+  return { kind, text: text(content) };
 }
 
 function ownedLists(item: HTMLLIElement) {
