@@ -7,10 +7,12 @@ Raw HTML is preserved and never executed by the editor.
 - Supported block HTML, currently `<details>`, is converted to its structured
   rich-text node. Supported standalone `<img>` tags are converted to Markdown
   image nodes.
-- An unsupported paired HTML tag parsed at a block-container boundary is
-  preserved as one atomic `raw_block`, from its opening tag through the matching
-  closing tag. Pairing is case-insensitive and stack-aware. Nested same-name and
-  mixed-name tags, Markdown, comments, and blank lines remain opaque source.
+- When remark parses Markdown between a balanced unsupported block HTML opener
+  and closer, the HTML boundaries remain raw nodes while the Markdown body stays
+  structured and editable, matching GitHub rendering behavior.
+- A balanced unsupported region with no structured Markdown children is
+  preserved as one atomic `raw_block`. Pairing is case-insensitive and
+  stack-aware for nested same-name and mixed-name tags.
 - Void elements, self-closing tags, standalone comments, and declarations remain
   individual raw nodes. Adjacent paired block regions remain separate.
 - A mismatched or unclosed block region is preserved opaquely through the end of

@@ -107,7 +107,7 @@ Body
     expect(screen.getByRole("heading", { name: "Hello" })).toBeTruthy();
   });
 
-  it("renders a balanced unsupported HTML region as one accessible atomic block", () => {
+  it("renders Markdown inside balanced unsupported block HTML", () => {
     const markdown = `<div align="center">
 
 **Markdown inside raw HTML should not disappear.**
@@ -115,22 +115,18 @@ Body
 </div>`;
     render(<GFMarkdownEditor context={context} value={markdown} />);
 
-    const region = screen.getByLabelText(
-      "Preserved unsupported HTML <div> region",
-    );
-    expect(region.getAttribute("contenteditable")).toBe("false");
-    expect(region.getAttribute("data-raw-kind")).toBe("html_region");
-    expect(region.textContent).toBe(markdown);
-    expect(document.querySelectorAll("[data-gfmd-raw-block]")).toHaveLength(1);
-    expect(region.querySelector("strong")).toBeNull();
+    expect(
+      screen.getByText("Markdown inside raw HTML should not disappear.")
+        .tagName,
+    ).toBe("STRONG");
+    expect(document.querySelectorAll("[data-gfmd-raw-block]")).toHaveLength(2);
+    expect(
+      serializeMarkdown(createGFMarkdownState({ context, value: markdown }).doc),
+    ).toBe(markdown);
   });
 
   it("selects, copies, pastes, deletes, and restores a raw HTML region atomically", () => {
-    const markdown = `<div>
-
-**opaque**
-
-</div>`;
+    const markdown = "<div><span>opaque</span></div>";
     let state = createGFMarkdownState({ context, value: markdown });
     const raw = state.doc.firstChild!;
 
@@ -163,11 +159,7 @@ Body
   });
 
   it("preserves raw region metadata through the HTML clipboard DOM path", () => {
-    const markdown = `<div>
-
-opaque
-
-</div>`;
+    const markdown = "<div><span>opaque</span></div>";
     const raw = createGFMarkdownState({ context, value: markdown }).doc.firstChild!;
     const container = document.createElement("div");
     container.appendChild(
@@ -184,16 +176,8 @@ opaque
   });
 
   it("replaces an atomic raw HTML region on controlled value updates", () => {
-    const first = `<div>
-
-First
-
-</div>`;
-    const second = `<section>
-
-Second
-
-</section>`;
+    const first = "<div><span>First</span></div>";
+    const second = "<section><span>Second</span></section>";
     const rendered = render(
       <GFMarkdownEditor context={context} value={first} />,
     );

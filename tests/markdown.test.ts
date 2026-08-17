@@ -166,7 +166,7 @@ describe("markdown", () => {
   });
 
   describe("unsupported raw HTML regions", () => {
-    const balancedRegions = [
+    const structuredRegions = [
       {
         name: "Markdown body",
         markdown: `<div align="center">
@@ -174,7 +174,7 @@ describe("markdown", () => {
 **Markdown inside raw HTML should not disappear.**
 
 </div>`,
-        tagName: "div",
+        text: "Markdown inside raw HTML should not disappear.",
       },
       {
         name: "nested same-name containers and quoted tag-like attributes",
@@ -187,7 +187,7 @@ Nested **Markdown**.
 </div>
 
 </div>`,
-        tagName: "div",
+        text: "Nested Markdown.",
       },
       {
         name: "differently nested containers and comments",
@@ -201,14 +201,7 @@ Body
 </aside>
 
 </section>`,
-        tagName: "section",
-      },
-      {
-        name: "raw-text element contents",
-        markdown: `<script>
-if (left < right) value = "</not-a-close>";
-</script>`,
-        tagName: "script",
+        text: "Body",
       },
       {
         name: "source that resembles supported inline syntax and empty tasks",
@@ -219,29 +212,42 @@ H<sub>2</sub>O
 - [ ]
 
 </div>`,
-        tagName: "div",
+        text: "H2O",
       },
     ];
 
-    it.each(balancedRegions)(
-      "captures $name as one exact atomic block",
-      ({ markdown, tagName }) => {
+    it.each(structuredRegions)(
+      "keeps Markdown structured inside $name",
+      ({ markdown, text }) => {
         const doc = parseMarkdown(markdown);
         const serialized = serializeMarkdown(doc);
+        let regionCount = 0;
 
-        expect(doc.childCount).toBe(1);
-        expect(doc.firstChild?.type.name).toBe("raw_block");
-        expect(doc.firstChild?.attrs).toMatchObject({
-          kind: "html_region",
-          tagName,
-          malformed: false,
-          value: markdown,
+        doc.descendants((node) => {
+          if (node.attrs.kind === "html_region") regionCount += 1;
         });
-        expect(serialized).toBe(markdown);
+        expect(regionCount).toBe(0);
+        expect(doc.textContent).toContain(text);
         expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
         expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
       },
     );
+
+    it("keeps raw-text element contents as one exact atomic block", () => {
+      const markdown = `<script>
+if (left < right) value = "</not-a-close>";
+</script>`;
+      const doc = parseMarkdown(markdown);
+
+      expect(doc.childCount).toBe(1);
+      expect(doc.firstChild?.attrs).toMatchObject({
+        kind: "html_region",
+        tagName: "script",
+        malformed: false,
+        value: markdown,
+      });
+      expect(serializeMarkdown(doc)).toBe(markdown);
+    });
 
     it.each([
       {
@@ -290,17 +296,11 @@ Second
 </section>`;
       const doc = parseMarkdown(markdown);
 
-      expect(doc.childCount).toBe(2);
-      expect(doc.child(0).attrs.value).toBe(`<div>
-
-First
-
-</div>`);
-      expect(doc.child(1).attrs.value).toBe(`<section>
-
-Second
-
-</section>`);
+      expect(doc.childCount).toBe(6);
+      expect(doc.textContent).toBe("FirstSecond");
+      expect(
+        doc.children.filter((node) => node.type.name === "raw_block"),
+      ).toHaveLength(4);
       expect(serializeMarkdown(doc)).toBe(markdown);
     });
 
@@ -351,7 +351,7 @@ Second
       );
     });
 
-    it("preserves a region as one block inside a list item", () => {
+    it("keeps Markdown structured inside block HTML in a list item", () => {
       const markdown = `- before
 
   <div class="note">
@@ -364,36 +364,41 @@ Second
       const doc = parseMarkdown(markdown);
       const firstItem = doc.firstChild?.firstChild;
 
-      expect(firstItem?.childCount).toBe(2);
-      expect(firstItem?.lastChild?.type.name).toBe("raw_block");
-      expect(firstItem?.lastChild?.attrs.value).toBe(`<div class="note">
-
-**inside**
-
-</div>`);
+      expect(firstItem?.childCount).toBe(4);
+      expect(firstItem?.child(2).textContent).toBe("inside");
+      expect(firstItem?.child(2).firstChild?.marks[0]?.type.name).toBe("strong");
       const serialized = serializeMarkdown(doc);
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
     });
 
-    it("preserves tab-indented list region source", () => {
+    it("keeps tab-indented Markdown structured inside block HTML", () => {
       const markdown = "-\t<div>\n\n\tbody\n\n\t</div>";
       const doc = parseMarkdown(markdown);
-      const region = doc.firstChild?.firstChild?.lastChild;
+      const item = doc.firstChild?.firstChild;
 
-      expect(region?.type.name).toBe("raw_block");
-      expect(region?.attrs.value).toBe("<div>\n\nbody\n\n</div>");
+      expect(item?.textContent).toBe("body");
+      expect(
+        item?.children
+          .filter((node) => node.type.name === "raw_block")
+          .map((node) => node.attrs.value),
+      ).toEqual(["<div>", "</div>"]);
       const serialized = serializeMarkdown(doc);
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
     });
 
-    it("preserves mixed tab and space indentation without deleting content", () => {
+    it("keeps mixed-indentation Markdown inside block HTML", () => {
       const markdown = "-\t<div>\n\n\tbody\n\n    </div>";
       const doc = parseMarkdown(markdown);
-      const region = doc.firstChild?.firstChild?.lastChild;
+      const item = doc.firstChild?.firstChild;
 
-      expect(region?.attrs.value).toBe("<div>\n\nbody\n\n</div>");
+      expect(item?.textContent).toBe("body");
+      expect(
+        item?.children
+          .filter((node) => node.type.name === "raw_block")
+          .map((node) => node.attrs.value),
+      ).toEqual(["<div>", "</div>"]);
       const serialized = serializeMarkdown(doc);
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
@@ -430,7 +435,7 @@ Second
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
     });
 
-    it("preserves a region as one block inside a blockquote", () => {
+    it("keeps Markdown structured inside block HTML in a blockquote", () => {
       const markdown = `> <div>
 >
 > Quoted **Markdown**
@@ -439,13 +444,9 @@ Second
       const doc = parseMarkdown(markdown);
       const quote = doc.firstChild;
 
-      expect(quote?.childCount).toBe(1);
-      expect(quote?.firstChild?.type.name).toBe("raw_block");
-      expect(quote?.firstChild?.attrs.value).toBe(`<div>
-
-Quoted **Markdown**
-
-</div>`);
+      expect(quote?.childCount).toBe(3);
+      expect(quote?.child(1).textContent).toBe("Quoted Markdown");
+      expect(quote?.child(1).child(1).marks[0]?.type.name).toBe("strong");
       const serialized = serializeMarkdown(doc);
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
@@ -463,9 +464,12 @@ Quoted **Markdown**
       const serialized = serializeMarkdown(doc);
 
       expect(doc.childCount).toBe(2);
-      expect(doc.firstChild?.type.name).toBe("raw_block");
+      expect(doc.firstChild?.attrs).toMatchObject({
+        kind: "html",
+        value: "<div>",
+      });
       expect(doc.lastChild?.type.name).toBe("blockquote");
-      expect(doc.lastChild?.textContent).toBe("after");
+      expect(doc.lastChild?.textContent).toBe("insideafter");
       expect(serialized).toContain("after");
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
@@ -494,11 +498,11 @@ text </div> after
 
       expect(doc.childCount).toBe(3);
       expect(doc.child(0).attrs).toMatchObject({
-        kind: "html_region",
-        malformed: false,
-        value: "<div>\n\ntext </div>",
+        kind: "html",
+        value: "<div>",
       });
-      expect(doc.child(1).textContent).toBe(" after");
+      expect(doc.child(1).textContent).toBe("text  after");
+      expect(doc.child(1).child(1).attrs.value).toBe("</div>");
       expect(doc.child(2).type.name).toBe("heading");
       const serialized = serializeMarkdown(doc);
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
@@ -514,11 +518,10 @@ text </div> after
       const doc = parseMarkdown(markdown);
       const serialized = serializeMarkdown(doc);
 
-      expect(doc.childCount).toBe(2);
-      expect(doc.child(0).attrs.value).toBe(
-        "<div>\n\n*text </div> after*",
-      );
-      expect(doc.child(1).type.name).toBe("heading");
+      expect(doc.childCount).toBe(3);
+      expect(doc.child(0).attrs.value).toBe("<div>");
+      expect(doc.child(1).textContent).toBe("text  after");
+      expect(doc.child(2).type.name).toBe("heading");
       expect(serialized).toContain(" after*");
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
@@ -679,7 +682,7 @@ Trailing body[^second].
     expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
   });
 
-  it("preserves a balanced raw HTML region inside a footnote definition", () => {
+  it("keeps Markdown structured inside block HTML in a footnote definition", () => {
     const markdown = `See note[^raw].
 
 [^raw]: <div class="note">
@@ -691,13 +694,9 @@ Trailing body[^second].
     const definition = doc.lastChild;
 
     expect(definition?.type.name).toBe("footnote_definition");
-    expect(definition?.childCount).toBe(1);
-    expect(definition?.firstChild?.type.name).toBe("raw_block");
-    expect(definition?.firstChild?.attrs.value).toBe(`<div class="note">
-
-**opaque footnote Markdown**
-
-</div>`);
+    expect(definition?.childCount).toBe(3);
+    expect(definition?.child(1).textContent).toBe("opaque footnote Markdown");
+    expect(definition?.child(1).firstChild?.marks[0]?.type.name).toBe("strong");
     const serialized = serializeMarkdown(doc);
     expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
     expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);

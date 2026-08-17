@@ -122,6 +122,15 @@ function groupBlockChildren(
     }
 
     const match = findRegionEnd(remaining, index, opener, source);
+    if (
+      match &&
+      !match.malformed &&
+      containsStructuredMarkdown(remaining, index, match.childIndex)
+    ) {
+      grouped.push(child);
+      index += 1;
+      continue;
+    }
     const finalIndex = match?.childIndex ?? remaining.length - 1;
     const startOffset = opener.absoluteStart;
     const endOffset =
@@ -155,6 +164,16 @@ function groupBlockChildren(
   }
 
   return grouped;
+}
+
+function containsStructuredMarkdown(
+  children: RootContent[],
+  openerIndex: number,
+  closerIndex: number,
+) {
+  return children
+    .slice(openerIndex + 1, closerIndex + 1)
+    .some((child) => child.type !== "html");
 }
 
 function rawContainerOpener(

@@ -58,6 +58,7 @@ function renderingFingerprint(root: HTMLElement) {
       )
       .map(listFingerprint),
     blockquotes: elements(comparable, "blockquote").map(text),
+    strongText: elements(comparable, "strong").map(text),
     table: elements(comparable, "table tr").map((row) =>
       elements(row, ":scope > th, :scope > td").map(text),
     ),
