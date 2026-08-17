@@ -9,6 +9,7 @@ import {
   IndentDecrease,
   IndentIncrease,
   Italic,
+  Keyboard,
   List,
   ListChecks,
   ListOrdered,
@@ -74,6 +75,12 @@ const markActions: ToolbarAction[] = [
     <Code className="gfmd-toolbar-icon" size={16} />,
     "Inline code",
     "code",
+  ),
+  markAction(
+    "keyboard-input",
+    <Keyboard className="gfmd-toolbar-icon" size={16} />,
+    "Keyboard input",
+    "keyboard_input",
   ),
   markAction(
     "subscript",

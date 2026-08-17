@@ -5,6 +5,15 @@ import {
   detailsNodeSpec,
   detailsSummaryNodeSpec,
 } from "./features/details/schema";
+import { emojiShortcodeNodeSpec } from "./features/emoji";
+import {
+  definitionDescriptionNodeSpec,
+  definitionListNodeSpec,
+  definitionTermNodeSpec,
+  pictureNodeSpec,
+  safeHtmlContainerNodeSpec,
+  safeHtmlMarkSpecs,
+} from "./features/html/schema";
 import {
   bulletListNodeSpec,
   listItemNodeSpec,
@@ -59,6 +68,10 @@ export const gfmSchema = new Schema({
     .append({
       details: detailsNodeSpec,
       details_summary: detailsSummaryNodeSpec,
+      emoji_shortcode: emojiShortcodeNodeSpec,
+      definition_description: definitionDescriptionNodeSpec,
+      definition_list: definitionListNodeSpec,
+      definition_term: definitionTermNodeSpec,
       empty_link: {
         inline: true,
         group: "inline",
@@ -129,6 +142,8 @@ export const gfmSchema = new Schema({
           `[^${node.attrs.label ?? node.attrs.identifier}]`,
         ],
       },
+      html_block_container: safeHtmlContainerNodeSpec,
+      picture: pictureNodeSpec,
       raw_block: rawMarkdownNodeSpec(false),
       raw_inline: rawMarkdownNodeSpec(true),
       task_list_item: taskListItemNodeSpec,
@@ -190,7 +205,8 @@ export const gfmSchema = new Schema({
         parseDOM: [{ tag: "sup" }],
         toDOM: () => ["sup", 0],
       },
-    }),
+    })
+    .append(safeHtmlMarkSpecs),
 });
 
 function rawMarkdownNodeSpec(inline: boolean): NodeSpec {

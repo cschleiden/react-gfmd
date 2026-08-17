@@ -58,6 +58,7 @@ function renderingFingerprint(root: HTMLElement) {
       )
       .map(listFingerprint),
     blockquotes: elements(comparable, "blockquote").map(text),
+    strongText: elements(comparable, "strong").map(text),
     table: elements(comparable, "table tr").map((row) =>
       elements(row, ":scope > th, :scope > td").map(text),
     ),
@@ -71,6 +72,14 @@ function renderingFingerprint(root: HTMLElement) {
         image.getAttribute("alt"),
         image.getAttribute("data-canonical-src") ?? image.getAttribute("src"),
       ],
+    ),
+    customEmoji: elements<HTMLImageElement>(comparable, "img.emoji").map(
+      (image) => image.getAttribute("alt"),
+    ),
+    emojiText: text(
+      elements(comparable, "p").find((paragraph) =>
+        paragraph.textContent?.startsWith("Emoji shortcodes"),
+      ) ?? null,
     ),
     footnotes: footnoteFingerprint(comparable),
   };

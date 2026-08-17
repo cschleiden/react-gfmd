@@ -16,6 +16,7 @@ import {
   parseHTML,
   serializeMarkdown,
 } from "../src";
+import { GFMarkdownToolbar } from "../src/toolbar";
 import {
   applyLinkEdit,
   linkSelection,
@@ -41,7 +42,37 @@ describe("GFMarkdownEditor", () => {
 
     expect(screen.getByLabelText("Markdown formatting")).toBeTruthy();
     expect(screen.getByTitle("Bold")).toBeTruthy();
+    expect(screen.getByTitle("Keyboard input")).toBeTruthy();
     expect(screen.getByTitle("Code block")).toBeTruthy();
+  });
+
+  it("adds and removes keyboard input formatting from the toolbar", () => {
+    let state = createGFMarkdownState({ context, value: "Press Ctrl" });
+    const from =
+      findTextPosition(state, "Press Ctrl") + "Press ".length;
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, from, from + "Ctrl".length),
+      ),
+    );
+    const view = {
+      get state() {
+        return state;
+      },
+      dispatch(transaction: Transaction) {
+        state = state.apply(transaction);
+      },
+      focus: vi.fn(),
+    } as unknown as EditorView;
+
+    render(<GFMarkdownToolbar state={state} view={view} />);
+    const keyboardInput = screen.getByTitle("Keyboard input");
+
+    fireEvent.click(keyboardInput);
+    expect(serializeMarkdown(state.doc)).toBe("Press <kbd>Ctrl</kbd>");
+
+    fireEvent.click(keyboardInput);
+    expect(serializeMarkdown(state.doc)).toBe("Press Ctrl");
   });
 
   it("can hide the formatting toolbar", () => {
@@ -107,7 +138,7 @@ Body
     expect(screen.getByRole("heading", { name: "Hello" })).toBeTruthy();
   });
 
-  it("renders a balanced unsupported HTML region as one accessible atomic block", () => {
+  it("renders Markdown inside balanced unsupported block HTML", () => {
     const markdown = `<div align="center">
 
 **Markdown inside raw HTML should not disappear.**
@@ -115,22 +146,231 @@ Body
 </div>`;
     render(<GFMarkdownEditor context={context} value={markdown} />);
 
-    const region = screen.getByLabelText(
-      "Preserved unsupported HTML <div> region",
+    expect(
+      screen.getByText("Markdown inside raw HTML should not disappear.")
+        .tagName,
+    ).toBe("STRONG");
+    expect(
+      document.querySelector("[data-gfmd-html-container]")?.tagName,
+    ).toBe("DIV");
+    expect(document.querySelectorAll("[data-gfmd-raw-block]")).toHaveLength(0);
+    expect(
+      serializeMarkdown(createGFMarkdownState({ context, value: markdown }).doc),
+    ).toBe(markdown);
+  });
+
+  it("renders safe GitHub HTML semantics as editable content", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={
+          "<kbd>Ctrl</kbd> <ins>inserted</ins> <mark>highlighted</mark> <samp>output</samp>"
+        }
+      />,
     );
-    expect(region.getAttribute("contenteditable")).toBe("false");
-    expect(region.getAttribute("data-raw-kind")).toBe("html_region");
-    expect(region.textContent).toBe(markdown);
-    expect(document.querySelectorAll("[data-gfmd-raw-block]")).toHaveLength(1);
-    expect(region.querySelector("strong")).toBeNull();
+
+    expect(screen.getByText("Ctrl").tagName).toBe("KBD");
+    expect(screen.getByText("inserted").tagName).toBe("INS");
+    expect(screen.getByText("highlighted").tagName).toBe("MARK");
+    expect(screen.getByText("output").tagName).toBe("SAMP");
+  });
+
+  it("renders structured definition lists and pictures", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={`<dl>
+<dt>Term</dt>
+<dd>Definition</dd>
+</dl>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="dark.png">
+  <img src="light.png" alt="Theme-aware logo">
+</picture>`}
+      />,
+    );
+
+    expect(screen.getByText("Term").tagName).toBe("DT");
+    expect(screen.getByText("Definition").closest("dd")).toBeTruthy();
+    const image = screen.getByAltText("Theme-aware logo");
+    expect(image.closest("picture")).toBeTruthy();
+    expect(image.closest("picture")?.querySelector("source")).toBeTruthy();
+  });
+
+  it("preserves structured GitHub HTML through Markdown clipboard text", () => {
+    const markdown = `<div>
+
+<kbd>Copy</kbd>
+
+</div>
+
+<picture>
+  <img src="logo.png" alt="Logo">
+</picture>`;
+    const slice = parseMarkdownClipboardText(markdown);
+
+    expect(serializeMarkdownClipboardSlice(slice)).toBe(markdown);
+  });
+
+  it("parses definition lists and pictures from clipboard HTML", () => {
+    const doc = parseHTML(
+      '<dl><dt>Term</dt><dd><p>Definition</p></dd></dl><picture><source srcset="dark.png"><img src="light.png" alt="Logo"></picture>',
+    );
+
+    expect(doc.firstChild?.type.name).toBe("definition_list");
+    expect(doc.lastChild?.type.name).toBe("picture");
+    expect(doc.lastChild?.attrs.image.alt).toBe("Logo");
+  });
+
+  it("updates structured GitHub HTML from controlled values", () => {
+    const rendered = render(
+      <GFMarkdownEditor
+        context={context}
+        value={"<div>\n\nFirst\n\n</div>"}
+      />,
+    );
+
+    expect(screen.getByText("First")).toBeTruthy();
+    rendered.rerender(
+      <GFMarkdownEditor
+        context={context}
+        value={"<section>\n\nSecond\n\n</section>"}
+      />,
+    );
+
+    expect(screen.queryByText("First")).toBeNull();
+    expect(screen.getByText("Second").closest("section")).toBeTruthy();
+  });
+
+  it("renders standard and GitHub-only emoji shortcodes", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={"Approved :+1: :shipit:"}
+      />,
+    );
+
+    expect(screen.getByTitle(":+1:").textContent).toBe("👍");
+    const shipit = screen.getByAltText(":shipit:");
+    expect(shipit.classList.contains("emoji")).toBe(true);
+    expect(shipit.getAttribute("src")).toContain("/emoji/shipit.png");
+  });
+
+  it("converts typed emoji shortcodes after a safe boundary", () => {
+    let state = createGFMarkdownState({ context, value: "" });
+
+    state = typeText(state, ":smile: next");
+
+    expect(state.doc.firstChild?.firstChild?.type.name).toBe("emoji_shortcode");
+    expect(state.doc.firstChild?.firstChild?.attrs.emoji).toBe("😄");
+    expect(serializeMarkdown(state.doc)).toBe(":smile: next");
+    expect(
+      createGFMarkdownState({
+        context,
+        value: serializeMarkdown(state.doc),
+      }).doc.toJSON(),
+    ).toEqual(state.doc.toJSON());
+  });
+
+  it("does not convert typed shortcodes inside words or inline code", () => {
+    const adjacent = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      "x:smile: next",
+    );
+    const code = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      "`:smile:` next",
+    );
+
+    expect(
+      adjacent.doc.firstChild?.children.some(
+        (node) => node.type.name === "emoji_shortcode",
+      ),
+    ).toBe(false);
+    expect(
+      code.doc.firstChild?.children.some(
+        (node) => node.type.name === "emoji_shortcode",
+      ),
+    ).toBe(false);
+    expect(serializeMarkdown(adjacent.doc)).toBe("x:smile: next");
+    expect(serializeMarkdown(code.doc)).toBe("`:smile:` next");
+  });
+
+  it("preserves inline formatting when converting a typed shortcode", () => {
+    const state = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      "**:smile:** next",
+    );
+    const emoji = state.doc.firstChild?.firstChild;
+
+    expect(emoji?.type.name).toBe("emoji_shortcode");
+    expect(emoji?.marks.map((mark) => mark.type.name)).toEqual(["strong"]);
+    expect(serializeMarkdown(state.doc)).toBe("**:smile:** next");
+  });
+
+  it("supports undo and redo after converting a typed shortcode", () => {
+    let state = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      ":smile: next",
+    );
+    const apply = (transaction: Transaction) => {
+      state = state.apply(transaction);
+    };
+
+    expect(state.doc.firstChild?.firstChild?.type.name).toBe("emoji_shortcode");
+    expect(undo(state, apply)).toBe(true);
+    expect(undo(state, apply)).toBe(true);
+    expect(
+      state.doc.firstChild?.children.some(
+        (node) => node.type.name === "emoji_shortcode",
+      ),
+    ).toBe(false);
+    expect(redo(state, apply)).toBe(true);
+    expect(redo(state, apply)).toBe(true);
+    expect(state.doc.firstChild?.firstChild?.type.name).toBe("emoji_shortcode");
+  });
+
+  it("preserves emoji shortcodes through Markdown clipboard text", () => {
+    const markdown = "Celebrate :tada: :shipit:";
+    const slice = parseMarkdownClipboardText(markdown);
+
+    expect(serializeMarkdownClipboardSlice(slice)).toBe(markdown);
+  });
+
+  it("parses emoji shortcodes from GitHub clipboard HTML", () => {
+    const doc = parseHTML(
+      '<p><g-emoji alias="smile">😄</g-emoji> <img class="emoji" alt=":shipit:" src="https://github.githubassets.com/images/icons/emoji/shipit.png"></p>',
+    );
+
+    expect(doc.firstChild?.child(0).attrs).toMatchObject({
+      emoji: "😄",
+      name: "smile",
+    });
+    expect(doc.firstChild?.child(2).attrs).toMatchObject({
+      imageUrl:
+        "https://github.githubassets.com/images/icons/emoji/shipit.png",
+      name: "shipit",
+    });
+    expect(serializeMarkdown(doc)).toBe(":smile: :shipit:");
+  });
+
+  it("updates emoji shortcodes from controlled values", () => {
+    const rendered = render(
+      <GFMarkdownEditor context={context} value="Status :smile:" />,
+    );
+
+    expect(screen.getByTitle(":smile:").textContent).toBe("😄");
+    rendered.rerender(
+      <GFMarkdownEditor context={context} value="Status :shipit:" />,
+    );
+
+    expect(screen.queryByTitle(":smile:")).toBeNull();
+    expect(screen.getByAltText(":shipit:")).toBeTruthy();
   });
 
   it("selects, copies, pastes, deletes, and restores a raw HTML region atomically", () => {
-    const markdown = `<div>
-
-**opaque**
-
-</div>`;
+    const markdown = "<div><span>opaque</span></div>";
     let state = createGFMarkdownState({ context, value: markdown });
     const raw = state.doc.firstChild!;
 
@@ -163,11 +403,7 @@ Body
   });
 
   it("preserves raw region metadata through the HTML clipboard DOM path", () => {
-    const markdown = `<div>
-
-opaque
-
-</div>`;
+    const markdown = "<div><span>opaque</span></div>";
     const raw = createGFMarkdownState({ context, value: markdown }).doc.firstChild!;
     const container = document.createElement("div");
     container.appendChild(
@@ -184,16 +420,8 @@ opaque
   });
 
   it("replaces an atomic raw HTML region on controlled value updates", () => {
-    const first = `<div>
-
-First
-
-</div>`;
-    const second = `<section>
-
-Second
-
-</section>`;
+    const first = "<div><span>First</span></div>";
+    const second = "<section><span>Second</span></section>";
     const rendered = render(
       <GFMarkdownEditor context={context} value={first} />,
     );

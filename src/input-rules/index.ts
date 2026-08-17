@@ -3,6 +3,7 @@ import {
   textblockTypeInputRule,
   wrappingInputRule,
 } from "@handlewithcare/prosemirror-inputrules";
+import { createEmojiShortcodeInputRule } from "../features/emoji";
 import { createListInputRules } from "../lists/input-rules";
 import { gfmSchema } from "../schema";
 
@@ -19,6 +20,7 @@ export function createMarkdownInputRules() {
       gfmSchema.marks.em,
     ),
     markTypeInputRule(/`(?<content>[^`]+)`$/d, gfmSchema.marks.code),
+    createEmojiShortcodeInputRule(),
     textblockTypeInputRule(
       /^(#{1,6})\s$/,
       gfmSchema.nodes.heading,

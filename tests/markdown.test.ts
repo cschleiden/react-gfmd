@@ -1,3 +1,4 @@
+import type { Node as ProseMirrorNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import { parseMarkdown, serializeMarkdown } from "../src";
 
@@ -149,14 +150,8 @@ describe("markdown", () => {
     expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
   });
 
-  it.each([
-    "<!-- keep me -->",
-    `<div class="note">
-
-**bold**
-
-</div>`,
-  ])("preserves unsupported block HTML as raw Markdown: %s", (markdown) => {
+  it("preserves unsupported block HTML as raw Markdown", () => {
+    const markdown = "<!-- keep me -->";
     const doc = parseMarkdown(markdown);
     const serialized = serializeMarkdown(doc);
 
@@ -166,7 +161,7 @@ describe("markdown", () => {
   });
 
   describe("unsupported raw HTML regions", () => {
-    const balancedRegions = [
+    const structuredRegions = [
       {
         name: "Markdown body",
         markdown: `<div align="center">
@@ -174,7 +169,7 @@ describe("markdown", () => {
 **Markdown inside raw HTML should not disappear.**
 
 </div>`,
-        tagName: "div",
+        text: "Markdown inside raw HTML should not disappear.",
       },
       {
         name: "nested same-name containers and quoted tag-like attributes",
@@ -187,7 +182,7 @@ Nested **Markdown**.
 </div>
 
 </div>`,
-        tagName: "div",
+        text: "Nested Markdown.",
       },
       {
         name: "differently nested containers and comments",
@@ -201,14 +196,7 @@ Body
 </aside>
 
 </section>`,
-        tagName: "section",
-      },
-      {
-        name: "raw-text element contents",
-        markdown: `<script>
-if (left < right) value = "</not-a-close>";
-</script>`,
-        tagName: "script",
+        text: "Body",
       },
       {
         name: "source that resembles supported inline syntax and empty tasks",
@@ -219,29 +207,42 @@ H<sub>2</sub>O
 - [ ]
 
 </div>`,
-        tagName: "div",
+        text: "H2O",
       },
     ];
 
-    it.each(balancedRegions)(
-      "captures $name as one exact atomic block",
-      ({ markdown, tagName }) => {
+    it.each(structuredRegions)(
+      "keeps Markdown structured inside $name",
+      ({ markdown, text }) => {
         const doc = parseMarkdown(markdown);
         const serialized = serializeMarkdown(doc);
+        let regionCount = 0;
 
-        expect(doc.childCount).toBe(1);
-        expect(doc.firstChild?.type.name).toBe("raw_block");
-        expect(doc.firstChild?.attrs).toMatchObject({
-          kind: "html_region",
-          tagName,
-          malformed: false,
-          value: markdown,
+        doc.descendants((node) => {
+          if (node.attrs.kind === "html_region") regionCount += 1;
         });
-        expect(serialized).toBe(markdown);
+        expect(regionCount).toBe(0);
+        expect(doc.textContent).toContain(text);
         expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
         expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
       },
     );
+
+    it("keeps raw-text element contents as one exact atomic block", () => {
+      const markdown = `<script>
+if (left < right) value = "</not-a-close>";
+</script>`;
+      const doc = parseMarkdown(markdown);
+
+      expect(doc.childCount).toBe(1);
+      expect(doc.firstChild?.attrs).toMatchObject({
+        kind: "html_region",
+        tagName: "script",
+        malformed: false,
+        value: markdown,
+      });
+      expect(serializeMarkdown(doc)).toBe(markdown);
+    });
 
     it.each([
       {
@@ -291,16 +292,12 @@ Second
       const doc = parseMarkdown(markdown);
 
       expect(doc.childCount).toBe(2);
-      expect(doc.child(0).attrs.value).toBe(`<div>
-
-First
-
-</div>`);
-      expect(doc.child(1).attrs.value).toBe(`<section>
-
-Second
-
-</section>`);
+      expect(doc.textContent).toBe("FirstSecond");
+      expect(
+        doc.children.filter(
+          (node) => node.type.name === "html_block_container",
+        ),
+      ).toHaveLength(2);
       expect(serializeMarkdown(doc)).toBe(markdown);
     });
 
@@ -351,7 +348,7 @@ Second
       );
     });
 
-    it("preserves a region as one block inside a list item", () => {
+    it("keeps Markdown structured inside block HTML in a list item", () => {
       const markdown = `- before
 
   <div class="note">
@@ -364,42 +361,42 @@ Second
       const doc = parseMarkdown(markdown);
       const firstItem = doc.firstChild?.firstChild;
 
-      expect(firstItem?.childCount).toBe(2);
-      expect(firstItem?.lastChild?.type.name).toBe("raw_block");
-      expect(firstItem?.lastChild?.attrs.value).toBe(`<div class="note">
-
-**inside**
-
-</div>`);
+      const container = firstItem?.lastChild;
+      expect(container?.type.name).toBe("html_block_container");
+      expect(container?.textContent).toBe("inside");
+      expect(container?.firstChild?.firstChild?.marks[0]?.type.name).toBe(
+        "strong",
+      );
       const serialized = serializeMarkdown(doc);
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
     });
 
-    it("preserves tab-indented list region source", () => {
+    it("keeps tab-indented Markdown structured inside block HTML", () => {
       const markdown = "-\t<div>\n\n\tbody\n\n\t</div>";
       const doc = parseMarkdown(markdown);
-      const region = doc.firstChild?.firstChild?.lastChild;
+      const item = doc.firstChild?.firstChild;
 
-      expect(region?.type.name).toBe("raw_block");
-      expect(region?.attrs.value).toBe("<div>\n\nbody\n\n</div>");
+      expect(item?.textContent).toBe("body");
+      expect(item?.lastChild?.type.name).toBe("html_block_container");
       const serialized = serializeMarkdown(doc);
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
     });
 
-    it("preserves mixed tab and space indentation without deleting content", () => {
+    it("keeps mixed-indentation Markdown inside block HTML", () => {
       const markdown = "-\t<div>\n\n\tbody\n\n    </div>";
       const doc = parseMarkdown(markdown);
-      const region = doc.firstChild?.firstChild?.lastChild;
+      const item = doc.firstChild?.firstChild;
 
-      expect(region?.attrs.value).toBe("<div>\n\nbody\n\n</div>");
+      expect(item?.textContent).toBe("body");
+      expect(item?.lastChild?.type.name).toBe("html_block_container");
       const serialized = serializeMarkdown(doc);
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
     });
 
-    it("keeps raw-only list items structurally inside their list", () => {
+    it("keeps HTML containers structurally inside their list item", () => {
       const markdown = `- <div>
 
   body
@@ -410,7 +407,9 @@ Second
       const reparsed = parseMarkdown(serialized);
 
       expect(doc.firstChild?.type.name).toBe("bullet_list");
-      expect(doc.firstChild?.firstChild?.lastChild?.type.name).toBe("raw_block");
+      expect(doc.firstChild?.firstChild?.lastChild?.type.name).toBe(
+        "html_block_container",
+      );
       expect(reparsed.toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(reparsed)).toBe(serialized);
     });
@@ -430,7 +429,7 @@ Second
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
     });
 
-    it("preserves a region as one block inside a blockquote", () => {
+    it("keeps Markdown structured inside block HTML in a blockquote", () => {
       const markdown = `> <div>
 >
 > Quoted **Markdown**
@@ -440,12 +439,11 @@ Second
       const quote = doc.firstChild;
 
       expect(quote?.childCount).toBe(1);
-      expect(quote?.firstChild?.type.name).toBe("raw_block");
-      expect(quote?.firstChild?.attrs.value).toBe(`<div>
-
-Quoted **Markdown**
-
-</div>`);
+      expect(quote?.firstChild?.type.name).toBe("html_block_container");
+      expect(quote?.firstChild?.textContent).toBe("Quoted Markdown");
+      expect(
+        quote?.firstChild?.firstChild?.child(1).marks[0]?.type.name,
+      ).toBe("strong");
       const serialized = serializeMarkdown(doc);
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
@@ -463,9 +461,12 @@ Quoted **Markdown**
       const serialized = serializeMarkdown(doc);
 
       expect(doc.childCount).toBe(2);
-      expect(doc.firstChild?.type.name).toBe("raw_block");
+      expect(doc.firstChild?.attrs).toMatchObject({
+        kind: "html",
+        value: "<div>",
+      });
       expect(doc.lastChild?.type.name).toBe("blockquote");
-      expect(doc.lastChild?.textContent).toBe("after");
+      expect(doc.lastChild?.textContent).toBe("insideafter");
       expect(serialized).toContain("after");
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
@@ -494,11 +495,11 @@ text </div> after
 
       expect(doc.childCount).toBe(3);
       expect(doc.child(0).attrs).toMatchObject({
-        kind: "html_region",
-        malformed: false,
-        value: "<div>\n\ntext </div>",
+        kind: "html",
+        value: "<div>",
       });
-      expect(doc.child(1).textContent).toBe(" after");
+      expect(doc.child(1).textContent).toBe("text  after");
+      expect(doc.child(1).child(1).attrs.value).toBe("</div>");
       expect(doc.child(2).type.name).toBe("heading");
       const serialized = serializeMarkdown(doc);
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
@@ -514,11 +515,10 @@ text </div> after
       const doc = parseMarkdown(markdown);
       const serialized = serializeMarkdown(doc);
 
-      expect(doc.childCount).toBe(2);
-      expect(doc.child(0).attrs.value).toBe(
-        "<div>\n\n*text </div> after*",
-      );
-      expect(doc.child(1).type.name).toBe("heading");
+      expect(doc.childCount).toBe(3);
+      expect(doc.child(0).attrs.value).toBe("<div>");
+      expect(doc.child(1).textContent).toBe("text  after");
+      expect(doc.child(2).type.name).toBe("heading");
       expect(serialized).toContain(" after*");
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
@@ -564,10 +564,9 @@ Body
     });
   });
 
-  it.each([
-    "Press <kbd>Ctrl</kbd> + <kbd>C</kbd>.",
-    "Use <custom-element data-value=\"1\">content</custom-element>.",
-  ])("preserves unsupported inline HTML as raw Markdown: %s", (markdown) => {
+  it("preserves unsupported inline HTML as raw Markdown", () => {
+    const markdown =
+      "Use <custom-element data-value=\"1\">content</custom-element>.";
     const doc = parseMarkdown(markdown);
     const rawValues: string[] = [];
     doc.descendants((node) => {
@@ -590,6 +589,203 @@ Body
     const markdown = "H<sub>2</sub>O and x<sup>2</sup>";
 
     expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
+  });
+
+  it("supports safe GitHub inline HTML semantics", () => {
+    const markdown =
+      '<ins cite="change" datetime="2026-08-17">new</ins> <mark>highlight</mark> <kbd>Ctrl</kbd> <samp>output</samp> <var>x</var> <q cite="source">quote</q> <tt>mono</tt>';
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+    const marks = new Set<string>();
+
+    doc.descendants((node) => {
+      node.marks.forEach((mark) => marks.add(mark.type.name));
+    });
+
+    expect(marks).toEqual(
+      new Set([
+        "highlight",
+        "insert",
+        "keyboard_input",
+        "quote",
+        "sample_output",
+        "teletype",
+        "variable",
+      ]),
+    );
+    expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
+    expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
+  });
+
+  it("keeps safe inline wrappers opaque when nested HTML is unsafe", () => {
+    const markdown =
+      'Press <kbd><a href="javascript:alert(1)">Ctrl</a></kbd>.';
+    const doc = parseMarkdown(markdown);
+    const rawValues: string[] = [];
+
+    doc.descendants((node) => {
+      if (node.type.name === "raw_inline") rawValues.push(node.attrs.value);
+    });
+
+    expect(rawValues).toEqual([
+      '<a href="javascript:alert(1)">',
+      "</a>",
+    ]);
+    expect(serializeMarkdown(doc)).toBe(markdown);
+  });
+
+  it("supports safe div and section containers with Markdown children", () => {
+    const markdown = `<div id="hero" align="center" class="not-rendered">
+
+**Body**
+
+<section lang="en">
+
+# Heading
+
+</section>
+
+</div>`;
+    const doc = parseMarkdown(markdown);
+    const container = doc.firstChild;
+    const nested = container?.lastChild;
+
+    expect(container?.type.name).toBe("html_block_container");
+    expect(container?.attrs).toMatchObject({
+      attrs: { align: "center", id: "hero" },
+      tagName: "div",
+    });
+    expect(nested?.type.name).toBe("html_block_container");
+    expect(nested?.attrs).toMatchObject({
+      attrs: { lang: "en" },
+      tagName: "section",
+    });
+    expect(serializeMarkdown(doc)).toBe(markdown);
+    expect(parseMarkdown(serializeMarkdown(doc)).toJSON()).toEqual(doc.toJSON());
+  });
+
+  it("supports definition lists with inline semantics", () => {
+    const markdown = `<dl>
+<dt>Term</dt>
+<dd>Definition with <strong>strength</strong></dd>
+</dl>`;
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+
+    expect(doc.firstChild?.type.name).toBe("definition_list");
+    expect(doc.firstChild?.firstChild?.type.name).toBe("definition_term");
+    expect(doc.firstChild?.lastChild?.type.name).toBe(
+      "definition_description",
+    );
+    expect(doc.firstChild?.lastChild?.textContent).toBe(
+      "Definition with strength",
+    );
+    expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
+    expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
+  });
+
+  it("supports safe picture sources with an image fallback", () => {
+    const markdown = `<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="dark.png">
+  <img src="light.png" alt="Theme-aware logo" width="64">
+</picture>`;
+    const doc = parseMarkdown(markdown);
+
+    expect(doc.firstChild?.type.name).toBe("picture");
+    expect(doc.firstChild?.attrs).toMatchObject({
+      image: {
+        alt: "Theme-aware logo",
+        src: "light.png",
+        width: "64",
+      },
+      sources: [
+        {
+          media: "(prefers-color-scheme: dark)",
+          srcset: "dark.png",
+        },
+      ],
+    });
+    expect(serializeMarkdown(doc)).toBe(markdown);
+    expect(parseMarkdown(serializeMarkdown(doc)).toJSON()).toEqual(doc.toJSON());
+  });
+
+  it("keeps pictures with unsafe sources opaque", () => {
+    const markdown = `<picture>
+  <img src="javascript:alert(1)" alt="Unsafe">
+</picture>`;
+    const doc = parseMarkdown(markdown);
+
+    expect(doc.firstChild?.type.name).toBe("raw_block");
+    expect(serializeMarkdown(doc)).toBe(markdown);
+  });
+
+  it("renders recognized GitHub emoji shortcodes while preserving source", () => {
+    const markdown =
+      "Ready :+1: :tada: :rocket: :slightly_smiling_face: :shipit: :octocat:";
+    const doc = parseMarkdown(markdown);
+    const emojiNodes: ProseMirrorNode[] = [];
+
+    doc.descendants((node) => {
+      if (node.type.name === "emoji_shortcode") emojiNodes.push(node);
+    });
+
+    expect(emojiNodes.map((node) => node.attrs.name)).toEqual([
+      "+1",
+      "tada",
+      "rocket",
+      "slightly_smiling_face",
+      "shipit",
+      "octocat",
+    ]);
+    expect(emojiNodes.slice(0, 4).map((node) => node.attrs.emoji)).toEqual([
+      "👍",
+      "🎉",
+      "🚀",
+      "🙂",
+    ]);
+    expect(emojiNodes.slice(4).every((node) => node.attrs.imageUrl)).toBe(true);
+    expect(serializeMarkdown(doc)).toBe(markdown);
+    expect(parseMarkdown(serializeMarkdown(doc)).toJSON()).toEqual(doc.toJSON());
+  });
+
+  it("keeps escaped, unknown, adjacent, and code shortcodes literal", () => {
+    const markdown =
+      "Escaped \\:smile:, unknown :not_real:, adjacent x:smile: and :smile:x, code `:smile:`.";
+    const doc = parseMarkdown(markdown);
+    const emojiNodes: ProseMirrorNode[] = [];
+
+    doc.descendants((node) => {
+      if (node.type.name === "emoji_shortcode") emojiNodes.push(node);
+    });
+
+    expect(emojiNodes).toHaveLength(1);
+    expect(emojiNodes[0].attrs).toMatchObject({
+      literal: true,
+      name: "smile",
+      shortcode: "\\:smile:",
+    });
+    const serialized = serializeMarkdown(doc);
+    expect(serialized).toContain("Escaped \\:smile:");
+    expect(serialized).toContain("unknown :not\\_real:");
+    expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
+  });
+
+  it("supports emoji shortcodes in links and details summaries", () => {
+    const markdown = `<details><summary>Celebrate :tada:</summary>
+
+[Launch :rocket:](https://example.com)
+
+</details>`;
+    const doc = parseMarkdown(markdown);
+    const details = doc.firstChild;
+
+    expect(details?.firstChild?.lastChild?.type.name).toBe("emoji_shortcode");
+    expect(details?.lastChild?.lastChild?.type.name).toBe("emoji_shortcode");
+    expect(details?.lastChild?.lastChild?.marks[0]?.type.name).toBe("link");
+    const serialized = serializeMarkdown(doc);
+    expect(serialized).toContain("<summary>Celebrate :tada:</summary>");
+    expect(serialized).toContain("[Launch :rocket:](https://example.com)");
+    expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
   });
 
   it.each([
@@ -649,7 +845,37 @@ const value = 1;
     expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
   });
 
-  it("preserves a balanced raw HTML region inside a footnote definition", () => {
+  it("stably places footnote definitions after editable document content", () => {
+    const markdown = `[^first]: First definition.
+
+Body[^first].
+
+[^second]: Second definition.
+
+Trailing body[^second].`;
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+
+    expect(
+      doc.children.map((node) => node.type.name),
+    ).toEqual([
+      "paragraph",
+      "paragraph",
+      "footnote_definition",
+      "footnote_definition",
+    ]);
+    expect(serialized).toBe(`Body[^first].
+
+Trailing body[^second].
+
+[^first]: First definition.
+
+[^second]: Second definition.`);
+    expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
+    expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
+  });
+
+  it("keeps Markdown structured inside block HTML in a footnote definition", () => {
     const markdown = `See note[^raw].
 
 [^raw]: <div class="note">
@@ -662,12 +888,13 @@ const value = 1;
 
     expect(definition?.type.name).toBe("footnote_definition");
     expect(definition?.childCount).toBe(1);
-    expect(definition?.firstChild?.type.name).toBe("raw_block");
-    expect(definition?.firstChild?.attrs.value).toBe(`<div class="note">
-
-**opaque footnote Markdown**
-
-</div>`);
+    expect(definition?.firstChild?.type.name).toBe("html_block_container");
+    expect(definition?.firstChild?.textContent).toBe(
+      "opaque footnote Markdown",
+    );
+    expect(
+      definition?.firstChild?.firstChild?.firstChild?.marks[0]?.type.name,
+    ).toBe("strong");
     const serialized = serializeMarkdown(doc);
     expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
     expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);

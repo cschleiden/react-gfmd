@@ -1,8 +1,17 @@
-import { Plugin, PluginKey, type EditorState } from "prosemirror-state";
+import {
+  AllSelection,
+  NodeSelection,
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type EditorState,
+  type Selection,
+} from "prosemirror-state";
 import { Decoration, DecorationSet } from "prosemirror-view";
 import {
   type FootnoteIndex,
   indexFootnotes,
+  placeFootnoteDefinitionsAtDocumentEnd,
 } from "./model";
 
 interface FootnotePluginState {
@@ -23,6 +32,28 @@ export function createFootnotePlugin() {
     props: {
       decorations: (state) =>
         footnotePluginKey.getState(state)?.decorations ?? null,
+    },
+    appendTransaction: (transactions, _oldState, newState) => {
+      if (!transactions.some((transaction) => transaction.docChanged)) {
+        return null;
+      }
+
+      const orderedDoc = placeFootnoteDefinitionsAtDocumentEnd(newState.doc);
+      if (orderedDoc === newState.doc) return null;
+
+      const replaceFrom = sharedTopLevelPrefixSize(newState.doc, orderedDoc);
+      const tr = newState.tr.replaceWith(
+        replaceFrom,
+        newState.doc.content.size,
+        orderedDoc.content.cut(replaceFrom),
+      );
+      return tr.setSelection(
+        remapSelectionForFootnoteOrder(
+          newState.selection,
+          newState.doc,
+          tr.doc,
+        ),
+      );
     },
   });
 }
@@ -57,4 +88,67 @@ function createPluginState(doc: EditorState["doc"]): FootnotePluginState {
     index,
     decorations: DecorationSet.create(doc, decorations),
   };
+}
+
+function remapSelectionForFootnoteOrder(
+  selection: Selection,
+  oldDoc: EditorState["doc"],
+  newDoc: EditorState["doc"],
+) {
+  if (selection instanceof AllSelection) return new AllSelection(newDoc);
+
+  const anchor = remapTopLevelPosition(selection.anchor, oldDoc, newDoc);
+  const head = remapTopLevelPosition(selection.head, oldDoc, newDoc);
+
+  if (selection instanceof NodeSelection) {
+    return NodeSelection.create(newDoc, anchor);
+  }
+  return TextSelection.create(newDoc, anchor, head);
+}
+
+function remapTopLevelPosition(
+  pos: number,
+  oldDoc: EditorState["doc"],
+  newDoc: EditorState["doc"],
+) {
+  if (pos === oldDoc.content.size) return newDoc.content.size;
+
+  let oldStart = 0;
+  let selectedNode: EditorState["doc"] | null = null;
+  let offset = 0;
+  oldDoc.forEach((node) => {
+    const oldEnd = oldStart + node.nodeSize;
+    if (!selectedNode && pos >= oldStart && pos < oldEnd) {
+      selectedNode = node;
+      offset = pos - oldStart;
+    }
+    oldStart = oldEnd;
+  });
+
+  if (!selectedNode) return Math.min(pos, newDoc.content.size);
+
+  let newStart = 0;
+  for (let index = 0; index < newDoc.childCount; index += 1) {
+    const node = newDoc.child(index);
+    if (node === selectedNode) {
+      return newStart + offset;
+    }
+    newStart += node.nodeSize;
+  }
+  return Math.min(pos, newDoc.content.size);
+}
+
+function sharedTopLevelPrefixSize(
+  oldDoc: EditorState["doc"],
+  newDoc: EditorState["doc"],
+) {
+  let size = 0;
+  const childCount = Math.min(oldDoc.childCount, newDoc.childCount);
+
+  for (let index = 0; index < childCount; index += 1) {
+    const node = oldDoc.child(index);
+    if (node !== newDoc.child(index)) break;
+    size += node.nodeSize;
+  }
+  return size;
 }
