@@ -523,6 +523,62 @@
   padding: 1px 3px;
 }
 
+.gfmd-editor-surface [data-gfmd-html-container] {
+  margin: 12px 0;
+}
+
+.gfmd-editor-surface [data-gfmd-html-container] > :last-child {
+  margin-bottom: 0;
+}
+
+.gfmd-editor-surface dl {
+  margin: 12px 0;
+}
+
+.gfmd-editor-surface dt {
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+.gfmd-editor-surface dd {
+  margin-left: 24px;
+}
+
+.gfmd-editor-surface dd > :last-child {
+  margin-bottom: 0;
+}
+
+.gfmd-editor-surface picture {
+  display: block;
+  margin: 12px 0;
+}
+
+.gfmd-editor-surface picture img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.gfmd-editor-surface kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--gfmd-border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--gfmd-subtle);
+  font: 0.85em ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.gfmd-editor-surface samp,
+.gfmd-editor-surface tt,
+.gfmd-editor-surface var {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.gfmd-editor-surface mark {
+  background: color-mix(in srgb, #fff8c5 85%, var(--gfmd-canvas));
+  color: inherit;
+}
+
 .gfmd-editor-surface .gfmd-task-list-item {
   position: relative;
   list-style: none;

@@ -99,9 +99,15 @@ function groupRawHtmlRegions(parent: MdastParent | Root, source: string) {
 function canContainBlockHtml(
   parent: MdastParent | Root,
 ): parent is (MdastParent | Root) & { children: RootContent[] } {
-  return ["blockquote", "details", "footnoteDefinition", "listItem", "root"].includes(
-    parent.type,
-  );
+  return [
+    "blockquote",
+    "definitionDescription",
+    "details",
+    "footnoteDefinition",
+    "listItem",
+    "root",
+    "safeHtmlContainer",
+  ].includes(parent.type);
 }
 
 function groupBlockChildren(

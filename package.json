@@ -46,6 +46,7 @@
     "@base-ui/react": "^1.5.0",
     "@handlewithcare/prosemirror-inputrules": "^0.1.4",
     "@handlewithcare/remark-prosemirror": "^0.1.5",
+    "hast-util-from-html": "^2.0.3",
     "lucide-react": "^1.16.0",
     "prosemirror-commands": "^1.7.1",
     "prosemirror-history": "^1.4.1",

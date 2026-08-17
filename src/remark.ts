@@ -40,6 +40,19 @@ import {
   parseDetailsSummary,
 } from "./features/details";
 import {
+  createRemarkGitHubHtml,
+  definitionListToMdast,
+  parseDefinitionDescription,
+  parseDefinitionList,
+  parseDefinitionTerm,
+  parsePicture,
+  parseSafeHtmlContainer,
+  parseSafeHtmlInline,
+  pictureToMdast,
+  safeHtmlContainerToMdast,
+  safeHtmlMarkToMdast,
+} from "./features/html";
+import {
   isPhrasingContent,
   type FromProseMirrorState,
   type HandlerState,
@@ -64,6 +77,9 @@ const markdownHandlers = {
   blockquote: parseBlockquote,
   details: parseDetails,
   detailsSummary: parseDetailsSummary,
+  definitionDescription: parseDefinitionDescription,
+  definitionList: parseDefinitionList,
+  definitionTerm: parseDefinitionTerm,
   list: parseList,
   listItem: (node: ListItem, _parent, state) =>
     (node.checked === null || node.checked === undefined
@@ -101,6 +117,9 @@ const markdownHandlers = {
     identifier: node.identifier,
     label: node.label ?? node.identifier,
   })),
+  picture: parsePicture,
+  safeHtmlContainer: parseSafeHtmlContainer,
+  safeHtmlInline: parseSafeHtmlInline,
   table: parseTable,
 } satisfies RemarkProseMirrorOptions["handlers"];
 
@@ -109,6 +128,7 @@ const markdownParser = unified()
   .use(remarkGfm)
   .use(createRemarkEmptyTaskItems)
   .use(createRemarkDetails(parseSummaryMarkdown))
+  .use(createRemarkGitHubHtml())
   .use(createRemarkRawHtmlRegions())
   .use(createRemarkInlineHtmlMarks)
   .use(remarkProseMirror, {
@@ -183,6 +203,11 @@ const proseMirrorNodeHandlers: FromProseMirrorOptions<
   details: (node, parent, state) =>
     detailsToMdast(node, parent, state, stringifyMarkdownTree),
   details_summary: () => null,
+  definition_description: () => null,
+  definition_list: definitionListToMdast,
+  definition_term: () => null,
+  html_block_container: safeHtmlContainerToMdast,
+  picture: pictureToMdast,
   table: (node, _parent, state) =>
     ({
       type: "table",
@@ -205,16 +230,24 @@ const proseMirrorMarkHandlers: FromProseMirrorOptions<
   strong: fromPmMark("strong"),
   em: fromPmMark("emphasis"),
   strike: fromPmMark("delete"),
-  subscript: (_mark, _parent, children) =>
-    ({
-      type: "html",
-      value: `<sub>${escapeHtml(mdastInlineText(children))}</sub>`,
-    }) as Html,
-  superscript: (_mark, _parent, children) =>
-    ({
-      type: "html",
-      value: `<sup>${escapeHtml(mdastInlineText(children))}</sup>`,
-    }) as Html,
+  highlight: (mark, _parent, children) =>
+    safeHtmlMarkToMdast(mark, children),
+  insert: (mark, _parent, children) =>
+    safeHtmlMarkToMdast(mark, children),
+  keyboard_input: (mark, _parent, children) =>
+    safeHtmlMarkToMdast(mark, children),
+  quote: (mark, _parent, children) =>
+    safeHtmlMarkToMdast(mark, children),
+  sample_output: (mark, _parent, children) =>
+    safeHtmlMarkToMdast(mark, children),
+  subscript: (mark, _parent, children) =>
+    safeHtmlMarkToMdast(mark, children),
+  superscript: (mark, _parent, children) =>
+    safeHtmlMarkToMdast(mark, children),
+  teletype: (mark, _parent, children) =>
+    safeHtmlMarkToMdast(mark, children),
+  variable: (mark, _parent, children) =>
+    safeHtmlMarkToMdast(mark, children),
   code: (_mark, _parent, children) => ({
     type: "inlineCode",
     value: mdastInlineText(children),
@@ -368,6 +401,7 @@ function isInlineHtmlParent(parent: MdastParent | undefined) {
         "heading",
         "link",
         "paragraph",
+        "safeHtmlInline",
         "strong",
         "tableCell",
       ].includes(parent.type),
@@ -427,7 +461,12 @@ function listItemToMdast(
     children[0]?.type === "paragraph" &&
     children[0].children.length === 0 &&
     node.childCount > 1 &&
-    node.child(1).type === gfmSchema.nodes.raw_block
+    [
+      gfmSchema.nodes.definition_list,
+      gfmSchema.nodes.html_block_container,
+      gfmSchema.nodes.picture,
+      gfmSchema.nodes.raw_block,
+    ].includes(node.child(1).type)
   ) {
     children.shift();
   }

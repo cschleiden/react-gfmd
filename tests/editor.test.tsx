@@ -119,10 +119,97 @@ Body
       screen.getByText("Markdown inside raw HTML should not disappear.")
         .tagName,
     ).toBe("STRONG");
-    expect(document.querySelectorAll("[data-gfmd-raw-block]")).toHaveLength(2);
+    expect(
+      document.querySelector("[data-gfmd-html-container]")?.tagName,
+    ).toBe("DIV");
+    expect(document.querySelectorAll("[data-gfmd-raw-block]")).toHaveLength(0);
     expect(
       serializeMarkdown(createGFMarkdownState({ context, value: markdown }).doc),
     ).toBe(markdown);
+  });
+
+  it("renders safe GitHub HTML semantics as editable content", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={
+          "<kbd>Ctrl</kbd> <ins>inserted</ins> <mark>highlighted</mark> <samp>output</samp>"
+        }
+      />,
+    );
+
+    expect(screen.getByText("Ctrl").tagName).toBe("KBD");
+    expect(screen.getByText("inserted").tagName).toBe("INS");
+    expect(screen.getByText("highlighted").tagName).toBe("MARK");
+    expect(screen.getByText("output").tagName).toBe("SAMP");
+  });
+
+  it("renders structured definition lists and pictures", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={`<dl>
+<dt>Term</dt>
+<dd>Definition</dd>
+</dl>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="dark.png">
+  <img src="light.png" alt="Theme-aware logo">
+</picture>`}
+      />,
+    );
+
+    expect(screen.getByText("Term").tagName).toBe("DT");
+    expect(screen.getByText("Definition").closest("dd")).toBeTruthy();
+    const image = screen.getByAltText("Theme-aware logo");
+    expect(image.closest("picture")).toBeTruthy();
+    expect(image.closest("picture")?.querySelector("source")).toBeTruthy();
+  });
+
+  it("preserves structured GitHub HTML through Markdown clipboard text", () => {
+    const markdown = `<div>
+
+<kbd>Copy</kbd>
+
+</div>
+
+<picture>
+  <img src="logo.png" alt="Logo">
+</picture>`;
+    const slice = parseMarkdownClipboardText(markdown);
+
+    expect(serializeMarkdownClipboardSlice(slice)).toBe(markdown);
+  });
+
+  it("parses definition lists and pictures from clipboard HTML", () => {
+    const doc = parseHTML(
+      '<dl><dt>Term</dt><dd><p>Definition</p></dd></dl><picture><source srcset="dark.png"><img src="light.png" alt="Logo"></picture>',
+    );
+
+    expect(doc.firstChild?.type.name).toBe("definition_list");
+    expect(doc.lastChild?.type.name).toBe("picture");
+    expect(doc.lastChild?.attrs.image.alt).toBe("Logo");
+  });
+
+  it("updates structured GitHub HTML from controlled values", () => {
+    const rendered = render(
+      <GFMarkdownEditor
+        context={context}
+        value={"<div>\n\nFirst\n\n</div>"}
+      />,
+    );
+
+    expect(screen.getByText("First")).toBeTruthy();
+    rendered.rerender(
+      <GFMarkdownEditor
+        context={context}
+        value={"<section>\n\nSecond\n\n</section>"}
+      />,
+    );
+
+    expect(screen.queryByText("First")).toBeNull();
+    expect(screen.getByText("Second").closest("section")).toBeTruthy();
   });
 
   it("selects, copies, pastes, deletes, and restores a raw HTML region atomically", () => {

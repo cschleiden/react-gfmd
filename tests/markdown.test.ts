@@ -149,14 +149,8 @@ describe("markdown", () => {
     expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
   });
 
-  it.each([
-    "<!-- keep me -->",
-    `<div class="note">
-
-**bold**
-
-</div>`,
-  ])("preserves unsupported block HTML as raw Markdown: %s", (markdown) => {
+  it("preserves unsupported block HTML as raw Markdown", () => {
+    const markdown = "<!-- keep me -->";
     const doc = parseMarkdown(markdown);
     const serialized = serializeMarkdown(doc);
 
@@ -296,11 +290,13 @@ Second
 </section>`;
       const doc = parseMarkdown(markdown);
 
-      expect(doc.childCount).toBe(6);
+      expect(doc.childCount).toBe(2);
       expect(doc.textContent).toBe("FirstSecond");
       expect(
-        doc.children.filter((node) => node.type.name === "raw_block"),
-      ).toHaveLength(4);
+        doc.children.filter(
+          (node) => node.type.name === "html_block_container",
+        ),
+      ).toHaveLength(2);
       expect(serializeMarkdown(doc)).toBe(markdown);
     });
 
@@ -364,9 +360,12 @@ Second
       const doc = parseMarkdown(markdown);
       const firstItem = doc.firstChild?.firstChild;
 
-      expect(firstItem?.childCount).toBe(4);
-      expect(firstItem?.child(2).textContent).toBe("inside");
-      expect(firstItem?.child(2).firstChild?.marks[0]?.type.name).toBe("strong");
+      const container = firstItem?.lastChild;
+      expect(container?.type.name).toBe("html_block_container");
+      expect(container?.textContent).toBe("inside");
+      expect(container?.firstChild?.firstChild?.marks[0]?.type.name).toBe(
+        "strong",
+      );
       const serialized = serializeMarkdown(doc);
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
@@ -378,11 +377,7 @@ Second
       const item = doc.firstChild?.firstChild;
 
       expect(item?.textContent).toBe("body");
-      expect(
-        item?.children
-          .filter((node) => node.type.name === "raw_block")
-          .map((node) => node.attrs.value),
-      ).toEqual(["<div>", "</div>"]);
+      expect(item?.lastChild?.type.name).toBe("html_block_container");
       const serialized = serializeMarkdown(doc);
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
@@ -394,17 +389,13 @@ Second
       const item = doc.firstChild?.firstChild;
 
       expect(item?.textContent).toBe("body");
-      expect(
-        item?.children
-          .filter((node) => node.type.name === "raw_block")
-          .map((node) => node.attrs.value),
-      ).toEqual(["<div>", "</div>"]);
+      expect(item?.lastChild?.type.name).toBe("html_block_container");
       const serialized = serializeMarkdown(doc);
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
     });
 
-    it("keeps raw-only list items structurally inside their list", () => {
+    it("keeps HTML containers structurally inside their list item", () => {
       const markdown = `- <div>
 
   body
@@ -415,7 +406,9 @@ Second
       const reparsed = parseMarkdown(serialized);
 
       expect(doc.firstChild?.type.name).toBe("bullet_list");
-      expect(doc.firstChild?.firstChild?.lastChild?.type.name).toBe("raw_block");
+      expect(doc.firstChild?.firstChild?.lastChild?.type.name).toBe(
+        "html_block_container",
+      );
       expect(reparsed.toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(reparsed)).toBe(serialized);
     });
@@ -444,9 +437,12 @@ Second
       const doc = parseMarkdown(markdown);
       const quote = doc.firstChild;
 
-      expect(quote?.childCount).toBe(3);
-      expect(quote?.child(1).textContent).toBe("Quoted Markdown");
-      expect(quote?.child(1).child(1).marks[0]?.type.name).toBe("strong");
+      expect(quote?.childCount).toBe(1);
+      expect(quote?.firstChild?.type.name).toBe("html_block_container");
+      expect(quote?.firstChild?.textContent).toBe("Quoted Markdown");
+      expect(
+        quote?.firstChild?.firstChild?.child(1).marks[0]?.type.name,
+      ).toBe("strong");
       const serialized = serializeMarkdown(doc);
       expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
       expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
@@ -567,10 +563,9 @@ Body
     });
   });
 
-  it.each([
-    "Press <kbd>Ctrl</kbd> + <kbd>C</kbd>.",
-    "Use <custom-element data-value=\"1\">content</custom-element>.",
-  ])("preserves unsupported inline HTML as raw Markdown: %s", (markdown) => {
+  it("preserves unsupported inline HTML as raw Markdown", () => {
+    const markdown =
+      "Use <custom-element data-value=\"1\">content</custom-element>.";
     const doc = parseMarkdown(markdown);
     const rawValues: string[] = [];
     doc.descendants((node) => {
@@ -593,6 +588,134 @@ Body
     const markdown = "H<sub>2</sub>O and x<sup>2</sup>";
 
     expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
+  });
+
+  it("supports safe GitHub inline HTML semantics", () => {
+    const markdown =
+      '<ins cite="change" datetime="2026-08-17">new</ins> <mark>highlight</mark> <kbd>Ctrl</kbd> <samp>output</samp> <var>x</var> <q cite="source">quote</q> <tt>mono</tt>';
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+    const marks = new Set<string>();
+
+    doc.descendants((node) => {
+      node.marks.forEach((mark) => marks.add(mark.type.name));
+    });
+
+    expect(marks).toEqual(
+      new Set([
+        "highlight",
+        "insert",
+        "keyboard_input",
+        "quote",
+        "sample_output",
+        "teletype",
+        "variable",
+      ]),
+    );
+    expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
+    expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
+  });
+
+  it("keeps safe inline wrappers opaque when nested HTML is unsafe", () => {
+    const markdown =
+      'Press <kbd><a href="javascript:alert(1)">Ctrl</a></kbd>.';
+    const doc = parseMarkdown(markdown);
+    const rawValues: string[] = [];
+
+    doc.descendants((node) => {
+      if (node.type.name === "raw_inline") rawValues.push(node.attrs.value);
+    });
+
+    expect(rawValues).toEqual([
+      '<a href="javascript:alert(1)">',
+      "</a>",
+    ]);
+    expect(serializeMarkdown(doc)).toBe(markdown);
+  });
+
+  it("supports safe div and section containers with Markdown children", () => {
+    const markdown = `<div id="hero" align="center" class="not-rendered">
+
+**Body**
+
+<section lang="en">
+
+# Heading
+
+</section>
+
+</div>`;
+    const doc = parseMarkdown(markdown);
+    const container = doc.firstChild;
+    const nested = container?.lastChild;
+
+    expect(container?.type.name).toBe("html_block_container");
+    expect(container?.attrs).toMatchObject({
+      attrs: { align: "center", id: "hero" },
+      tagName: "div",
+    });
+    expect(nested?.type.name).toBe("html_block_container");
+    expect(nested?.attrs).toMatchObject({
+      attrs: { lang: "en" },
+      tagName: "section",
+    });
+    expect(serializeMarkdown(doc)).toBe(markdown);
+    expect(parseMarkdown(serializeMarkdown(doc)).toJSON()).toEqual(doc.toJSON());
+  });
+
+  it("supports definition lists with inline semantics", () => {
+    const markdown = `<dl>
+<dt>Term</dt>
+<dd>Definition with <strong>strength</strong></dd>
+</dl>`;
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+
+    expect(doc.firstChild?.type.name).toBe("definition_list");
+    expect(doc.firstChild?.firstChild?.type.name).toBe("definition_term");
+    expect(doc.firstChild?.lastChild?.type.name).toBe(
+      "definition_description",
+    );
+    expect(doc.firstChild?.lastChild?.textContent).toBe(
+      "Definition with strength",
+    );
+    expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
+    expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
+  });
+
+  it("supports safe picture sources with an image fallback", () => {
+    const markdown = `<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="dark.png">
+  <img src="light.png" alt="Theme-aware logo" width="64">
+</picture>`;
+    const doc = parseMarkdown(markdown);
+
+    expect(doc.firstChild?.type.name).toBe("picture");
+    expect(doc.firstChild?.attrs).toMatchObject({
+      image: {
+        alt: "Theme-aware logo",
+        src: "light.png",
+        width: "64",
+      },
+      sources: [
+        {
+          media: "(prefers-color-scheme: dark)",
+          srcset: "dark.png",
+        },
+      ],
+    });
+    expect(serializeMarkdown(doc)).toBe(markdown);
+    expect(parseMarkdown(serializeMarkdown(doc)).toJSON()).toEqual(doc.toJSON());
+  });
+
+  it("keeps pictures with unsafe sources opaque", () => {
+    const markdown = `<picture>
+  <img src="javascript:alert(1)" alt="Unsafe">
+</picture>`;
+    const doc = parseMarkdown(markdown);
+
+    expect(doc.firstChild?.type.name).toBe("raw_block");
+    expect(serializeMarkdown(doc)).toBe(markdown);
   });
 
   it.each([
@@ -694,9 +817,14 @@ Trailing body[^second].
     const definition = doc.lastChild;
 
     expect(definition?.type.name).toBe("footnote_definition");
-    expect(definition?.childCount).toBe(3);
-    expect(definition?.child(1).textContent).toBe("opaque footnote Markdown");
-    expect(definition?.child(1).firstChild?.marks[0]?.type.name).toBe("strong");
+    expect(definition?.childCount).toBe(1);
+    expect(definition?.firstChild?.type.name).toBe("html_block_container");
+    expect(definition?.firstChild?.textContent).toBe(
+      "opaque footnote Markdown",
+    );
+    expect(
+      definition?.firstChild?.firstChild?.firstChild?.marks[0]?.type.name,
+    ).toBe("strong");
     const serialized = serializeMarkdown(doc);
     expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
     expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
