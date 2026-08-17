@@ -16,6 +16,7 @@ import {
   parseHTML,
   serializeMarkdown,
 } from "../src";
+import { GFMarkdownToolbar } from "../src/toolbar";
 import {
   applyLinkEdit,
   linkSelection,
@@ -41,7 +42,37 @@ describe("GFMarkdownEditor", () => {
 
     expect(screen.getByLabelText("Markdown formatting")).toBeTruthy();
     expect(screen.getByTitle("Bold")).toBeTruthy();
+    expect(screen.getByTitle("Keyboard input")).toBeTruthy();
     expect(screen.getByTitle("Code block")).toBeTruthy();
+  });
+
+  it("adds and removes keyboard input formatting from the toolbar", () => {
+    let state = createGFMarkdownState({ context, value: "Press Ctrl" });
+    const from =
+      findTextPosition(state, "Press Ctrl") + "Press ".length;
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, from, from + "Ctrl".length),
+      ),
+    );
+    const view = {
+      get state() {
+        return state;
+      },
+      dispatch(transaction: Transaction) {
+        state = state.apply(transaction);
+      },
+      focus: vi.fn(),
+    } as unknown as EditorView;
+
+    render(<GFMarkdownToolbar state={state} view={view} />);
+    const keyboardInput = screen.getByTitle("Keyboard input");
+
+    fireEvent.click(keyboardInput);
+    expect(serializeMarkdown(state.doc)).toBe("Press <kbd>Ctrl</kbd>");
+
+    fireEvent.click(keyboardInput);
+    expect(serializeMarkdown(state.doc)).toBe("Press Ctrl");
   });
 
   it("can hide the formatting toolbar", () => {
