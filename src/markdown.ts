@@ -1,4 +1,5 @@
 import type { Fragment, Node as ProseMirrorNode } from "prosemirror-model";
+import { placeFootnoteDefinitionsAtDocumentEnd } from "./features/footnotes/model";
 import {
   parseInlineText,
   parseWithRemark,
@@ -13,7 +14,7 @@ export function parseMarkdown(markdown: string): ProseMirrorNode {
     ]);
   }
 
-  return parseWithRemark(markdown);
+  return placeFootnoteDefinitionsAtDocumentEnd(parseWithRemark(markdown));
 }
 
 export function serializeMarkdown(doc: ProseMirrorNode): string {

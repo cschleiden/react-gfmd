@@ -86,6 +86,27 @@ export function footnoteDefinitions(doc: ProseMirrorNode): FootnoteDefinition[] 
   }));
 }
 
+export function placeFootnoteDefinitionsAtDocumentEnd(doc: ProseMirrorNode) {
+  const content: ProseMirrorNode[] = [];
+  const definitions: ProseMirrorNode[] = [];
+  let foundDefinition = false;
+  let needsReordering = false;
+
+  doc.forEach((node) => {
+    if (node.type === gfmSchema.nodes.footnote_definition) {
+      foundDefinition = true;
+      definitions.push(node);
+      return;
+    }
+
+    if (foundDefinition) needsReordering = true;
+    content.push(node);
+  });
+
+  if (!needsReordering) return doc;
+  return doc.type.create(doc.attrs, [...content, ...definitions], doc.marks);
+}
+
 export function normalizeFootnoteIdentifier(label: string) {
   return label.trim().replace(/\s+/g, " ").toLowerCase();
 }

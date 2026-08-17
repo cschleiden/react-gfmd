@@ -48,6 +48,27 @@ describe("footnote editing", () => {
     expect(screen.getByText("content").tagName).toBe("STRONG");
   });
 
+  it("renders editable definitions after all document content", () => {
+    const { container } = render(
+      <GFMarkdownEditor
+        context={context}
+        value={"[^note]: Editable body.\n\nContent after the definition[^note]."}
+      />,
+    );
+
+    const definition = container.querySelector(".gfmd-footnote-definition");
+    const trailingBody = Array.from(container.querySelectorAll("p")).find(
+      (paragraph) =>
+        paragraph.textContent?.startsWith("Content after the definition"),
+    );
+    expect(definition).not.toBeNull();
+    expect(trailingBody).toBeDefined();
+    expect(
+      trailingBody!.compareDocumentPosition(definition!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+  });
+
   it("inserts a collision-free footnote from the toolbar", () => {
     const onChange = vi.fn();
     render(
@@ -339,6 +360,33 @@ describe("footnote editing", () => {
     });
     expect(referenceCount).toBe(2);
     expect(serializeMarkdown(state.doc).match(/\[\^note\]:/g)).toHaveLength(1);
+  });
+
+  it("keeps definitions at the end after document edits", () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "Body[^note].\n\n[^note]: Definition.",
+    });
+    const trailingParagraph = gfmSchema.nodes.paragraph.create(
+      null,
+      gfmSchema.text("Trailing body."),
+    );
+
+    const insertPos = state.doc.content.size;
+    const tr = state.tr.insert(insertPos, trailingParagraph);
+    tr.setSelection(
+      TextSelection.create(tr.doc, insertPos + 1),
+    );
+    state = state.apply(tr);
+
+    expect(state.doc.lastChild?.type).toBe(gfmSchema.nodes.footnote_definition);
+    expect(state.doc.child(state.doc.childCount - 2).textContent).toBe(
+      "Trailing body.",
+    );
+    expect(serializeMarkdown(state.doc)).toBe(
+      "Body[^note].\n\nTrailing body.\n\n[^note]: Definition.",
+    );
+    expect(state.selection.$from.parent.textContent).toBe("Trailing body.");
   });
 
   it("does not insert another reference for an orphan identifier", () => {

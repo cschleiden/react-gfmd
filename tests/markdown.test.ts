@@ -649,6 +649,36 @@ const value = 1;
     expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown);
   });
 
+  it("stably places footnote definitions after editable document content", () => {
+    const markdown = `[^first]: First definition.
+
+Body[^first].
+
+[^second]: Second definition.
+
+Trailing body[^second].`;
+    const doc = parseMarkdown(markdown);
+    const serialized = serializeMarkdown(doc);
+
+    expect(
+      doc.children.map((node) => node.type.name),
+    ).toEqual([
+      "paragraph",
+      "paragraph",
+      "footnote_definition",
+      "footnote_definition",
+    ]);
+    expect(serialized).toBe(`Body[^first].
+
+Trailing body[^second].
+
+[^first]: First definition.
+
+[^second]: Second definition.`);
+    expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
+    expect(serializeMarkdown(parseMarkdown(serialized))).toBe(serialized);
+  });
+
   it("preserves a balanced raw HTML region inside a footnote definition", () => {
     const markdown = `See note[^raw].
 
