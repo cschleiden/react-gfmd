@@ -55,11 +55,3 @@ pre {
   padding: 12px;
   background: #f6f8fa;
 }
-
-.gfmd-editor-surface li[data-checked="true"]::marker {
-  content: "[x] ";
-}
-
-.gfmd-editor-surface li[data-checked="false"]::marker {
-  content: "[ ] ";
-}
