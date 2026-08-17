@@ -1,6 +1,7 @@
 import { type NodeSpec, Schema } from "prosemirror-model";
 import { schema as basicSchema } from "prosemirror-schema-basic";
 import { tableNodes } from "prosemirror-tables";
+import { alertNodeSpec } from "./features/alerts/schema";
 import {
   detailsNodeSpec,
   detailsSummaryNodeSpec,
@@ -66,6 +67,7 @@ export const gfmSchema = new Schema({
       ],
     })
     .append({
+      alert: alertNodeSpec,
       details: detailsNodeSpec,
       details_summary: detailsSummaryNodeSpec,
       emoji_shortcode: emojiShortcodeNodeSpec,

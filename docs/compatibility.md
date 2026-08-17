@@ -1,5 +1,18 @@
 # Markdown compatibility
 
+## GitHub alerts
+
+Alerts are a GitHub rendering extension, not part of GFM. The editor recognizes
+`NOTE`, `TIP`, `IMPORTANT`, `WARNING`, and `CAUTION` markers at the start of a
+blockquote and converts them to editable semantic alert blocks.
+
+- Alert type, nested block structure, inline formatting, and list ownership are
+  preserved through Markdown and HTML clipboard round-trips.
+- Typing an alert marker inside a blockquote or choosing an alert type from the
+  toolbar creates the same structured node.
+- Unknown markers and markers that are not on their own first line remain
+  ordinary blockquotes.
+
 ## GitHub HTML rendering extensions
 
 HTML support is a GitHub rendering extension, not part of the GFM feature set.

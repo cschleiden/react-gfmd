@@ -17,6 +17,7 @@ export function isPhrasingContent(
     "details",
     "detailsSummary",
     "footnoteDefinition",
+    "githubAlert",
     "heading",
     "list",
     "listItem",
