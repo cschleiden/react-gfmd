@@ -40,6 +40,11 @@ import {
   parseDetailsSummary,
 } from "./features/details";
 import {
+  createRemarkEmojiShortcodes,
+  emojiShortcodeToMdast,
+  parseEmojiShortcode,
+} from "./features/emoji";
+import {
   createRemarkGitHubHtml,
   definitionListToMdast,
   parseDefinitionDescription,
@@ -77,6 +82,7 @@ const markdownHandlers = {
   blockquote: parseBlockquote,
   details: parseDetails,
   detailsSummary: parseDetailsSummary,
+  emojiShortcode: parseEmojiShortcode,
   definitionDescription: parseDefinitionDescription,
   definitionList: parseDefinitionList,
   definitionTerm: parseDefinitionTerm,
@@ -126,6 +132,7 @@ const markdownHandlers = {
 const markdownParser = unified()
   .use(remarkParse)
   .use(remarkGfm)
+  .use(createRemarkEmojiShortcodes())
   .use(createRemarkEmptyTaskItems)
   .use(createRemarkDetails(parseSummaryMarkdown))
   .use(createRemarkGitHubHtml())
@@ -203,6 +210,7 @@ const proseMirrorNodeHandlers: FromProseMirrorOptions<
   details: (node, parent, state) =>
     detailsToMdast(node, parent, state, stringifyMarkdownTree),
   details_summary: () => null,
+  emoji_shortcode: emojiShortcodeToMdast,
   definition_description: () => null,
   definition_list: definitionListToMdast,
   definition_term: () => null,
@@ -258,7 +266,10 @@ const proseMirrorMarkHandlers: FromProseMirrorOptions<
   })),
 };
 
-const summaryParser = unified().use(remarkParse).use(remarkGfm);
+const summaryParser = unified()
+  .use(remarkParse)
+  .use(remarkGfm)
+  .use(createRemarkEmojiShortcodes());
 
 export function parseWithRemark(markdown: string) {
   const normalizedMarkdown = markdown.replace(/\r\n?/g, "\n");
@@ -597,7 +608,10 @@ function tableCellChildren(
 }
 
 function parseSummaryMarkdown(value: string): PhrasingContent[] {
-  const tree = summaryParser.parse(encodeInlineHtmlMarks(value.trim()));
+  const encoded = encodeInlineHtmlMarks(value.trim());
+  const tree = summaryParser.runSync(summaryParser.parse(encoded), {
+    value: encoded,
+  }) as Root;
   const firstChild = tree.children[0];
 
   if (firstChild?.type === "paragraph") {

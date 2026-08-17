@@ -18,6 +18,9 @@ source and is never executed by the editor.
 - `<picture>` with safe `<source>` candidates and an `<img>` fallback becomes an
   atomic responsive-image node. Unsafe URLs, invalid source sets, and malformed
   pictures remain opaque source.
+- Recognized GitHub emoji shortcodes render as Unicode emoji or GitHub-hosted
+  custom emoji images while retaining their original `:name:` source. Escaped,
+  unknown, code-span, and word-adjacent shortcode text remains literal.
 - `<details>` is converted to its existing structured rich-text node. Supported
   standalone `<img>` tags are converted to Markdown image nodes.
 

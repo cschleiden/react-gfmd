@@ -1,3 +1,4 @@
+import type { Node as ProseMirrorNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import { parseMarkdown, serializeMarkdown } from "../src";
 
@@ -716,6 +717,75 @@ Body
 
     expect(doc.firstChild?.type.name).toBe("raw_block");
     expect(serializeMarkdown(doc)).toBe(markdown);
+  });
+
+  it("renders recognized GitHub emoji shortcodes while preserving source", () => {
+    const markdown =
+      "Ready :+1: :tada: :rocket: :slightly_smiling_face: :shipit: :octocat:";
+    const doc = parseMarkdown(markdown);
+    const emojiNodes: ProseMirrorNode[] = [];
+
+    doc.descendants((node) => {
+      if (node.type.name === "emoji_shortcode") emojiNodes.push(node);
+    });
+
+    expect(emojiNodes.map((node) => node.attrs.name)).toEqual([
+      "+1",
+      "tada",
+      "rocket",
+      "slightly_smiling_face",
+      "shipit",
+      "octocat",
+    ]);
+    expect(emojiNodes.slice(0, 4).map((node) => node.attrs.emoji)).toEqual([
+      "👍",
+      "🎉",
+      "🚀",
+      "🙂",
+    ]);
+    expect(emojiNodes.slice(4).every((node) => node.attrs.imageUrl)).toBe(true);
+    expect(serializeMarkdown(doc)).toBe(markdown);
+    expect(parseMarkdown(serializeMarkdown(doc)).toJSON()).toEqual(doc.toJSON());
+  });
+
+  it("keeps escaped, unknown, adjacent, and code shortcodes literal", () => {
+    const markdown =
+      "Escaped \\:smile:, unknown :not_real:, adjacent x:smile: and :smile:x, code `:smile:`.";
+    const doc = parseMarkdown(markdown);
+    const emojiNodes: ProseMirrorNode[] = [];
+
+    doc.descendants((node) => {
+      if (node.type.name === "emoji_shortcode") emojiNodes.push(node);
+    });
+
+    expect(emojiNodes).toHaveLength(1);
+    expect(emojiNodes[0].attrs).toMatchObject({
+      literal: true,
+      name: "smile",
+      shortcode: "\\:smile:",
+    });
+    const serialized = serializeMarkdown(doc);
+    expect(serialized).toContain("Escaped \\:smile:");
+    expect(serialized).toContain("unknown :not\\_real:");
+    expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
+  });
+
+  it("supports emoji shortcodes in links and details summaries", () => {
+    const markdown = `<details><summary>Celebrate :tada:</summary>
+
+[Launch :rocket:](https://example.com)
+
+</details>`;
+    const doc = parseMarkdown(markdown);
+    const details = doc.firstChild;
+
+    expect(details?.firstChild?.lastChild?.type.name).toBe("emoji_shortcode");
+    expect(details?.lastChild?.lastChild?.type.name).toBe("emoji_shortcode");
+    expect(details?.lastChild?.lastChild?.marks[0]?.type.name).toBe("link");
+    const serialized = serializeMarkdown(doc);
+    expect(serialized).toContain("<summary>Celebrate :tada:</summary>");
+    expect(serialized).toContain("[Launch :rocket:](https://example.com)");
+    expect(parseMarkdown(serialized).toJSON()).toEqual(doc.toJSON());
   });
 
   it.each([

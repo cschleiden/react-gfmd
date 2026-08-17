@@ -5,6 +5,7 @@ import {
   detailsNodeSpec,
   detailsSummaryNodeSpec,
 } from "./features/details/schema";
+import { emojiShortcodeNodeSpec } from "./features/emoji";
 import {
   definitionDescriptionNodeSpec,
   definitionListNodeSpec,
@@ -67,6 +68,7 @@ export const gfmSchema = new Schema({
     .append({
       details: detailsNodeSpec,
       details_summary: detailsSummaryNodeSpec,
+      emoji_shortcode: emojiShortcodeNodeSpec,
       definition_description: definitionDescriptionNodeSpec,
       definition_list: definitionListNodeSpec,
       definition_term: definitionTermNodeSpec,

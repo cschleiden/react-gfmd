@@ -243,6 +243,132 @@ Body
     expect(screen.getByText("Second").closest("section")).toBeTruthy();
   });
 
+  it("renders standard and GitHub-only emoji shortcodes", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={"Approved :+1: :shipit:"}
+      />,
+    );
+
+    expect(screen.getByTitle(":+1:").textContent).toBe("👍");
+    const shipit = screen.getByAltText(":shipit:");
+    expect(shipit.classList.contains("emoji")).toBe(true);
+    expect(shipit.getAttribute("src")).toContain("/emoji/shipit.png");
+  });
+
+  it("converts typed emoji shortcodes after a safe boundary", () => {
+    let state = createGFMarkdownState({ context, value: "" });
+
+    state = typeText(state, ":smile: next");
+
+    expect(state.doc.firstChild?.firstChild?.type.name).toBe("emoji_shortcode");
+    expect(state.doc.firstChild?.firstChild?.attrs.emoji).toBe("😄");
+    expect(serializeMarkdown(state.doc)).toBe(":smile: next");
+    expect(
+      createGFMarkdownState({
+        context,
+        value: serializeMarkdown(state.doc),
+      }).doc.toJSON(),
+    ).toEqual(state.doc.toJSON());
+  });
+
+  it("does not convert typed shortcodes inside words or inline code", () => {
+    const adjacent = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      "x:smile: next",
+    );
+    const code = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      "`:smile:` next",
+    );
+
+    expect(
+      adjacent.doc.firstChild?.children.some(
+        (node) => node.type.name === "emoji_shortcode",
+      ),
+    ).toBe(false);
+    expect(
+      code.doc.firstChild?.children.some(
+        (node) => node.type.name === "emoji_shortcode",
+      ),
+    ).toBe(false);
+    expect(serializeMarkdown(adjacent.doc)).toBe("x:smile: next");
+    expect(serializeMarkdown(code.doc)).toBe("`:smile:` next");
+  });
+
+  it("preserves inline formatting when converting a typed shortcode", () => {
+    const state = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      "**:smile:** next",
+    );
+    const emoji = state.doc.firstChild?.firstChild;
+
+    expect(emoji?.type.name).toBe("emoji_shortcode");
+    expect(emoji?.marks.map((mark) => mark.type.name)).toEqual(["strong"]);
+    expect(serializeMarkdown(state.doc)).toBe("**:smile:** next");
+  });
+
+  it("supports undo and redo after converting a typed shortcode", () => {
+    let state = typeText(
+      createGFMarkdownState({ context, value: "" }),
+      ":smile: next",
+    );
+    const apply = (transaction: Transaction) => {
+      state = state.apply(transaction);
+    };
+
+    expect(state.doc.firstChild?.firstChild?.type.name).toBe("emoji_shortcode");
+    expect(undo(state, apply)).toBe(true);
+    expect(undo(state, apply)).toBe(true);
+    expect(
+      state.doc.firstChild?.children.some(
+        (node) => node.type.name === "emoji_shortcode",
+      ),
+    ).toBe(false);
+    expect(redo(state, apply)).toBe(true);
+    expect(redo(state, apply)).toBe(true);
+    expect(state.doc.firstChild?.firstChild?.type.name).toBe("emoji_shortcode");
+  });
+
+  it("preserves emoji shortcodes through Markdown clipboard text", () => {
+    const markdown = "Celebrate :tada: :shipit:";
+    const slice = parseMarkdownClipboardText(markdown);
+
+    expect(serializeMarkdownClipboardSlice(slice)).toBe(markdown);
+  });
+
+  it("parses emoji shortcodes from GitHub clipboard HTML", () => {
+    const doc = parseHTML(
+      '<p><g-emoji alias="smile">😄</g-emoji> <img class="emoji" alt=":shipit:" src="https://github.githubassets.com/images/icons/emoji/shipit.png"></p>',
+    );
+
+    expect(doc.firstChild?.child(0).attrs).toMatchObject({
+      emoji: "😄",
+      name: "smile",
+    });
+    expect(doc.firstChild?.child(2).attrs).toMatchObject({
+      imageUrl:
+        "https://github.githubassets.com/images/icons/emoji/shipit.png",
+      name: "shipit",
+    });
+    expect(serializeMarkdown(doc)).toBe(":smile: :shipit:");
+  });
+
+  it("updates emoji shortcodes from controlled values", () => {
+    const rendered = render(
+      <GFMarkdownEditor context={context} value="Status :smile:" />,
+    );
+
+    expect(screen.getByTitle(":smile:").textContent).toBe("😄");
+    rendered.rerender(
+      <GFMarkdownEditor context={context} value="Status :shipit:" />,
+    );
+
+    expect(screen.queryByTitle(":smile:")).toBeNull();
+    expect(screen.getByAltText(":shipit:")).toBeTruthy();
+  });
+
   it("selects, copies, pastes, deletes, and restores a raw HTML region atomically", () => {
     const markdown = "<div><span>opaque</span></div>";
     let state = createGFMarkdownState({ context, value: markdown });
