@@ -264,7 +264,8 @@
   background: var(--gfmd-canvas);
 }
 
-.gfmd-toolbar-button:disabled {
+.gfmd-toolbar-button:disabled,
+.gfmd-toolbar-button[data-disabled] {
   color: var(--gfmd-muted-fg);
   cursor: not-allowed;
   opacity: 0.55;

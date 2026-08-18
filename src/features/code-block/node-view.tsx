@@ -2,6 +2,7 @@ import { Menu } from "@base-ui/react/menu";
 import type { Node as ProseMirrorNode } from "prosemirror-model";
 import type { EditorView, NodeView } from "prosemirror-view";
 import { createRoot, type Root } from "react-dom/client";
+import { dispatchIsolatedTransaction } from "../../history";
 
 const supportedLanguages = [
   "text",
@@ -77,13 +78,13 @@ export class CodeBlockNodeView implements NodeView {
     const pos = this.getPos();
     if (typeof pos !== "number") return;
 
-    this.view.dispatch(
+    dispatchIsolatedTransaction(
+      this.view,
       this.view.state.tr.setNodeMarkup(pos, undefined, {
         ...this.node.attrs,
         language,
       }),
     );
-    this.view.focus();
   };
 
   private renderHeader() {

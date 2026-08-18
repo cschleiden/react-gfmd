@@ -1,18 +1,69 @@
 import { Fragment, Slice } from "prosemirror-model";
+import { closeHistory } from "prosemirror-history";
 import { Plugin, type Selection } from "prosemirror-state";
+import type { EditorView } from "prosemirror-view";
 import { isListNode } from "./lists/utils";
 import { parseMarkdown, serializeMarkdown } from "./markdown";
 import { gfmSchema } from "./schema";
 import type { EditorContext } from "./types";
 
 export function createMarkdownClipboardPlugin(context: EditorContext) {
+  let pendingClipboardChange = false;
+  let pendingReset: ReturnType<typeof globalThis.setTimeout> | null = null;
+
   return new Plugin({
+    appendTransaction: (transactions, _oldState, newState) => {
+      const taggedClipboardChange = transactions.some((transaction) =>
+        ["cut", "drop", "paste"].includes(
+          String(transaction.getMeta("uiEvent")),
+        ),
+      );
+      const pendingDocumentChange =
+        pendingClipboardChange &&
+        transactions.some((transaction) => transaction.docChanged);
+      if (!taggedClipboardChange && !pendingDocumentChange) {
+        return null;
+      }
+
+      clearPendingClipboardChange();
+      return closeHistory(newState.tr);
+    },
     props: {
       clipboardTextParser: (text) => parseMarkdownClipboardText(text, context),
       clipboardTextSerializer: (slice, view) =>
         serializeMarkdownClipboardSlice(slice, view.state.selection),
+      handleDrop: (view, _event, slice) => {
+        if (slice.size) closeHistoryBeforeClipboardChange(view);
+        return false;
+      },
+      handleDOMEvents: {
+        cut: (view) =>
+          view.state.selection.empty
+            ? false
+            : closeHistoryBeforeClipboardChange(view),
+        paste: (view) =>
+          view.composing ? closeHistoryBeforeClipboardChange(view) : false,
+      },
+      handlePaste: (view, _event, slice) => {
+        if (slice.size) closeHistoryBeforeClipboardChange(view);
+        return false;
+      },
     },
   });
+
+  function closeHistoryBeforeClipboardChange(view: EditorView) {
+    pendingClipboardChange = true;
+    if (pendingReset !== null) globalThis.clearTimeout(pendingReset);
+    pendingReset = globalThis.setTimeout(clearPendingClipboardChange, 0);
+    view.dispatch(closeHistory(view.state.tr));
+    return false;
+  }
+
+  function clearPendingClipboardChange() {
+    pendingClipboardChange = false;
+    if (pendingReset !== null) globalThis.clearTimeout(pendingReset);
+    pendingReset = null;
+  }
 }
 
 export function parseMarkdownClipboardText(

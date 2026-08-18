@@ -377,4 +377,83 @@ second paragraph`);
     ).toBe(true);
     expect(state.doc.textContent).toContain("nested sibling");
   });
+
+  it("isolates paste from adjacent typing in history", () => {
+    const view = createEditorView(createGFMarkdownState({ context, value: "" }));
+    view.dispatch(view.state.tr.insertText("typed "));
+
+    startPaste(view);
+    expect(view.pasteText("paste", pasteEvent())).toBe(true);
+    view.dispatch(view.state.tr.insertText(" after"));
+    expect(serializeMarkdown(view.state.doc)).toBe("typed paste after");
+
+    expect(undo(view.state, (transaction) => view.dispatch(transaction))).toBe(
+      true,
+    );
+    expect(serializeMarkdown(view.state.doc)).toBe("typed paste");
+    expect(undo(view.state, (transaction) => view.dispatch(transaction))).toBe(
+      true,
+    );
+    expect(serializeMarkdown(view.state.doc)).toBe("typed&#x20;");
+    expect(undo(view.state, (transaction) => view.dispatch(transaction))).toBe(
+      true,
+    );
+    expect(serializeMarkdown(view.state.doc)).toBe("");
+
+    expect(redo(view.state, (transaction) => view.dispatch(transaction))).toBe(
+      true,
+    );
+    expect(serializeMarkdown(view.state.doc)).toBe("typed&#x20;");
+    expect(redo(view.state, (transaction) => view.dispatch(transaction))).toBe(
+      true,
+    );
+    expect(serializeMarkdown(view.state.doc)).toBe("typed paste");
+    view.destroy();
+  });
+
+  it("closes native paste history without UI event metadata", () => {
+    const view = createEditorView(createGFMarkdownState({ context, value: "" }));
+    view.dispatch(view.state.tr.insertText("typed "));
+
+    Object.defineProperty(view, "composing", {
+      configurable: true,
+      value: true,
+    });
+    startPaste(view);
+    view.dispatch(view.state.tr.insertText("paste").setMeta("composition", 1));
+    view.dispatch(view.state.tr.insertText(" after"));
+    expect(serializeMarkdown(view.state.doc)).toBe("typed paste after");
+
+    expect(undo(view.state, (transaction) => view.dispatch(transaction))).toBe(
+      true,
+    );
+    expect(serializeMarkdown(view.state.doc)).toBe("typed paste");
+    expect(undo(view.state, (transaction) => view.dispatch(transaction))).toBe(
+      true,
+    );
+    expect(serializeMarkdown(view.state.doc)).toBe("typed&#x20;");
+    view.destroy();
+  });
+
+  it("does not split typing after a clipboard event changes nothing", async () => {
+    const view = createEditorView(createGFMarkdownState({ context, value: "" }));
+    view.dispatch(view.state.tr.insertText("a"));
+
+    startPaste(view);
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+    view.dispatch(view.state.tr.insertText("bc"));
+    expect(serializeMarkdown(view.state.doc)).toBe("abc");
+
+    expect(undo(view.state, (transaction) => view.dispatch(transaction))).toBe(
+      true,
+    );
+    expect(serializeMarkdown(view.state.doc)).toBe("");
+    view.destroy();
+  });
 });
+
+function startPaste(view: EditorView) {
+  for (const plugin of view.state.plugins) {
+    plugin.props.handleDOMEvents?.paste?.call(plugin, view, pasteEvent());
+  }
+}

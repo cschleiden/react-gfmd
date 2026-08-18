@@ -15,12 +15,14 @@ import {
   ListOrdered,
   Minus,
   Quote,
+  Redo2,
   Strikethrough,
   Subscript,
   Superscript,
+  Undo2,
 } from "lucide-react";
 import { setBlockType, toggleMark, wrapIn } from "prosemirror-commands";
-import { closeHistory, redo, undo } from "prosemirror-history";
+import { redo, undo } from "prosemirror-history";
 import type { NodeType } from "prosemirror-model";
 import { EditorState, type Command } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
@@ -36,6 +38,7 @@ import {
   isInAnyListItem,
 } from "./lists/commands";
 import { FootnoteToolbar } from "./features/footnotes";
+import { runIsolatedCommand } from "./history";
 import { gfmSchema } from "./schema";
 
 interface GFMarkdownToolbarProps {
@@ -174,6 +177,27 @@ export function GFMarkdownToolbar({
       aria-label="Markdown formatting"
       onKeyDown={(event) => handleToolbarKeyDown(event, view)}
     >
+      <Toolbar.Group className="gfmd-toolbar-group" aria-label="History">
+        <HistoryButton
+          ariaKeyShortcuts="Meta+Z Control+Z"
+          command={undo}
+          icon={<Undo2 className="gfmd-toolbar-icon" size={16} />}
+          label="Undo"
+          shortcut={historyShortcut("undo")}
+          state={state}
+          view={view}
+        />
+        <HistoryButton
+          ariaKeyShortcuts="Meta+Shift+Z Control+Shift+Z Control+Y"
+          command={redo}
+          icon={<Redo2 className="gfmd-toolbar-icon" size={16} />}
+          label="Redo"
+          shortcut={historyShortcut("redo")}
+          state={state}
+          view={view}
+        />
+      </Toolbar.Group>
+      <Toolbar.Separator className="gfmd-toolbar-separator" />
       <Toolbar.Group
         className="gfmd-toolbar-group"
         aria-label="Inline formatting"
@@ -214,6 +238,42 @@ export function GFMarkdownToolbar({
         <LinkEditor state={state} view={view} />
       </Toolbar.Group>
     </Toolbar.Root>
+  );
+}
+
+function HistoryButton({
+  ariaKeyShortcuts,
+  command,
+  icon,
+  label,
+  shortcut,
+  state,
+  view,
+}: {
+  ariaKeyShortcuts: string;
+  command: Command;
+  icon: React.ReactNode;
+  label: string;
+  shortcut: string;
+  state: EditorState;
+  view: EditorView;
+}) {
+  return (
+    <Toolbar.Button
+      aria-keyshortcuts={ariaKeyShortcuts}
+      aria-label={label}
+      className="gfmd-toolbar-button"
+      disabled={!command(state, undefined, view)}
+      onClick={() => {
+        command(view.state, view.dispatch, view);
+        view.focus();
+      }}
+      onMouseDown={(event) => event.preventDefault()}
+      title={`${label} (${shortcut})`}
+      type="button"
+    >
+      {icon}
+    </Toolbar.Button>
   );
 }
 
@@ -414,25 +474,46 @@ function hasInlineFormatting(state: EditorState) {
 }
 
 function runCommand(view: EditorView, command: Command) {
-  view.dispatch(closeHistory(view.state.tr));
-  const handled = command(view.state, view.dispatch, view);
-  view.dispatch(closeHistory(view.state.tr));
-  view.focus();
-  return handled;
+  return runIsolatedCommand(view, command);
 }
 
 function handleToolbarKeyDown(
   event: React.KeyboardEvent,
   view: EditorView,
 ) {
-  if (event.key.toLowerCase() !== "z" || !(event.metaKey || event.ctrlKey)) {
-    return;
-  }
+  if (isEditableTarget(event.target)) return;
+
+  const key = event.key.toLowerCase();
+  const modified = event.metaKey || event.ctrlKey;
+  const command =
+    modified && key === "z"
+      ? event.shiftKey
+        ? redo
+        : undo
+      : modified && key === "y" && !event.shiftKey
+        ? redo
+        : null;
+  if (!command) return;
 
   event.preventDefault();
-  const command = event.shiftKey ? redo : undo;
   command(view.state, view.dispatch, view);
   view.focus();
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  );
+}
+
+function historyShortcut(action: "undo" | "redo") {
+  const apple =
+    typeof navigator !== "undefined" &&
+    /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+  if (action === "undo") return apple ? "\u2318Z" : "Ctrl+Z";
+  return apple ? "\u21e7\u2318Z" : "Ctrl+Y";
 }
 
 function markActive(state: EditorState, markName: string) {

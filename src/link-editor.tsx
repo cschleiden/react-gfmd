@@ -1,6 +1,5 @@
 import { Popover } from "@base-ui/react/popover";
 import { Link2, Link2Off } from "lucide-react";
-import { closeHistory } from "prosemirror-history";
 import type { Node as ProseMirrorNode } from "prosemirror-model";
 import type { EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
@@ -13,6 +12,7 @@ import {
   restoreLinkSelection,
   type LinkSelection,
 } from "./link";
+import { dispatchIsolatedTransaction } from "./history";
 
 interface LinkEditorProps {
   state: EditorState;
@@ -77,18 +77,20 @@ export function LinkEditor({ state, view }: LinkEditorProps) {
       return;
     }
 
-    view.dispatch(
-      closeHistory(
-        applyLinkEdit(view.state, draft.target, draft),
-      ).scrollIntoView(),
+    dispatchIsolatedTransaction(
+      view,
+      applyLinkEdit(view.state, draft.target, draft).scrollIntoView(),
+      { focus: false },
     );
     close(false);
   }
 
   function unlink() {
     if (!draft || draft.target.kind === "new") return;
-    view.dispatch(
-      closeHistory(removeLink(view.state, draft.target)).scrollIntoView(),
+    dispatchIsolatedTransaction(
+      view,
+      removeLink(view.state, draft.target).scrollIntoView(),
+      { focus: false },
     );
     close(false);
   }

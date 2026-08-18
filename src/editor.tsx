@@ -158,7 +158,6 @@ function createPlugins(options: CreateGFMarkdownStateOptions): Plugin[] {
       "Mod-`": toggleMark(gfmSchema.marks.code),
     }),
     keymap(baseKeymap),
-    createMarkdownClipboardPlugin(options.context),
     createTaskListPlugin(),
     createFootnotePlugin(),
     inputRules({
@@ -166,6 +165,7 @@ function createPlugins(options: CreateGFMarkdownStateOptions): Plugin[] {
     }),
     createLinkInteractionPlugin(),
     tableEditing(),
+    createMarkdownClipboardPlugin(options.context),
   ];
 }
 

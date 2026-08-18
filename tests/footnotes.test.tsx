@@ -166,6 +166,17 @@ describe("footnote editing", () => {
       "One[^renamed-note], two[^renamed-note].\n\n[^renamed-note]: Body.",
       expect.anything(),
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(
+      screen.getAllByRole("button", {
+        name: "Footnote note; go to definition",
+      }),
+    ).toHaveLength(2);
+    expect(onChange).toHaveBeenLastCalledWith(
+      "One[^note], two[^note].\n\n[^note]: Body.",
+      expect.anything(),
+    );
   });
 
   it("rejects label collisions", () => {
