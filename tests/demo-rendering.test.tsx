@@ -3,13 +3,17 @@
 import { render } from "@testing-library/react";
 import { act } from "react";
 import { describe, expect, it } from "vitest";
-import { initialMarkdown } from "../demo/main";
+import { formatMarkdownPreview, initialMarkdown } from "../demo/main";
 import { GFMarkdownEditor } from "../src";
 import githubRenderedHtml from "./fixtures/demo.github.html?raw";
 
 const context = { owner: "cschleiden", repo: "react-gfmd" };
 
 describe("demo rendering", () => {
+  it("shows serialized trailing spaces as whitespace instead of entities", () => {
+    expect(formatMarkdownPreview("df&#x20;")).toBe("df ");
+  });
+
   it("matches the semantic structure captured from GitHub's Markdown endpoint", async () => {
     const github = document.createElement("main");
     github.innerHTML = githubRenderedHtml;

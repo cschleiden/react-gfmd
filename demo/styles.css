@@ -6,7 +6,7 @@ body {
 }
 
 main {
-  width: min(1480px, calc(100% - 32px));
+  width: min(1800px, calc(100% - 32px));
   margin: clamp(24px, 4vw, 48px) auto;
 }
 
