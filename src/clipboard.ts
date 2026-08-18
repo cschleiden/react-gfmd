@@ -3,19 +3,23 @@ import { Plugin, type Selection } from "prosemirror-state";
 import { isListNode } from "./lists/utils";
 import { parseMarkdown, serializeMarkdown } from "./markdown";
 import { gfmSchema } from "./schema";
+import type { EditorContext } from "./types";
 
-export function createMarkdownClipboardPlugin() {
+export function createMarkdownClipboardPlugin(context: EditorContext) {
   return new Plugin({
     props: {
-      clipboardTextParser: (text) => parseMarkdownClipboardText(text),
+      clipboardTextParser: (text) => parseMarkdownClipboardText(text, context),
       clipboardTextSerializer: (slice, view) =>
         serializeMarkdownClipboardSlice(slice, view.state.selection),
     },
   });
 }
 
-export function parseMarkdownClipboardText(markdown: string) {
-  return Slice.maxOpen(parseMarkdown(markdown).content, true);
+export function parseMarkdownClipboardText(
+  markdown: string,
+  context?: EditorContext,
+) {
+  return Slice.maxOpen(parseMarkdown(markdown, context).content, true);
 }
 
 export function serializeMarkdownClipboardSlice(

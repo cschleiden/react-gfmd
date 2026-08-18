@@ -47,7 +47,7 @@ export function createGFMarkdownState(
   options: CreateGFMarkdownStateOptions,
 ): EditorState {
   return EditorState.create({
-    doc: parseMarkdown(options.value),
+    doc: parseMarkdown(options.value, options.context),
     schema: gfmSchema,
     plugins: createPlugins(options),
   });
@@ -57,6 +57,7 @@ export function GFMarkdownEditor(props: GFMarkdownEditorProps) {
   const latestProps = React.useRef(props);
   latestProps.current = props;
   const lastAppliedValueRef = React.useRef(props.value);
+  const lastAppliedContextRef = React.useRef(contextKey(props.context));
 
   const [editorState, setEditorState] = React.useState<EditorState>(() =>
     createGFMarkdownState(props),
@@ -65,10 +66,17 @@ export function GFMarkdownEditor(props: GFMarkdownEditorProps) {
   const nodeViews = React.useMemo(() => createNodeViews(latestProps), []);
 
   React.useEffect(() => {
-    if (props.value === lastAppliedValueRef.current) return;
+    const nextContextKey = contextKey(props.context);
+    if (
+      props.value === lastAppliedValueRef.current &&
+      nextContextKey === lastAppliedContextRef.current
+    ) {
+      return;
+    }
     lastAppliedValueRef.current = props.value;
+    lastAppliedContextRef.current = nextContextKey;
     setEditorState(createGFMarkdownState(latestProps.current));
-  }, [props.value]);
+  }, [props.context.owner, props.context.repo, props.value]);
 
   const dispatchTransaction = React.useCallback((transaction: Transaction) => {
     setEditorState((state) => {
@@ -80,6 +88,7 @@ export function GFMarkdownEditor(props: GFMarkdownEditorProps) {
           nextState.doc,
         );
       }
+
       return nextState;
     });
   }, []);
@@ -107,6 +116,10 @@ export function GFMarkdownEditor(props: GFMarkdownEditorProps) {
       </ProseMirror>
     </div>
   );
+}
+
+function contextKey(context: GFMarkdownEditorProps["context"]) {
+  return `${context.owner}\0${context.repo}`;
 }
 
 function EditorViewObserver({
@@ -143,11 +156,11 @@ function createPlugins(options: CreateGFMarkdownStateOptions): Plugin[] {
       "Mod-`": toggleMark(gfmSchema.marks.code),
     }),
     keymap(baseKeymap),
-    createMarkdownClipboardPlugin(),
+    createMarkdownClipboardPlugin(options.context),
     createTaskListPlugin(),
     createFootnotePlugin(),
     inputRules({
-      rules: createMarkdownInputRules(),
+      rules: createMarkdownInputRules(options.context),
     }),
     createLinkInteractionPlugin(),
     tableEditing(),
