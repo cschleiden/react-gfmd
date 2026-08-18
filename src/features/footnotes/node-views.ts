@@ -5,6 +5,7 @@ import type {
   NodeView,
   ViewMutationRecord,
 } from "prosemirror-view";
+import { runIsolatedCommand } from "../../history";
 import {
   footnoteRenameError,
   renameFootnote,
@@ -214,7 +215,7 @@ export class FootnoteDefinitionNodeView implements NodeView {
     }
 
     const command = renameFootnote(identifier, label);
-    if (command(this.view.state, this.view.dispatch, this.view)) {
+    if (runIsolatedCommand(this.view, command, { focus: false })) {
       this.status.textContent = `Renamed footnote to ${label.trim()}.`;
       this.finishLabelEdit();
       return true;

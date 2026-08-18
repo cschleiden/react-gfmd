@@ -1,5 +1,6 @@
 import { Plugin } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
+import { dispatchIsolatedTransaction } from "../history";
 import { gfmSchema } from "../schema";
 
 export function createTaskListPlugin() {
@@ -56,11 +57,13 @@ function setTaskChecked(view: EditorView, pos: number, checked: boolean) {
 
   if (node.attrs.checked === checked) return true;
 
-  view.dispatch(
+  dispatchIsolatedTransaction(
+    view,
     view.state.tr.setNodeMarkup(pos, undefined, {
       ...node.attrs,
       checked,
     }),
+    { focus: false },
   );
 
   return true;

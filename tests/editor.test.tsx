@@ -36,14 +36,71 @@ import {
 
 const context = { owner: "cschleiden", repo: "react-gfmd" };
 
+Range.prototype.getClientRects ??= () => [] as unknown as DOMRectList;
+Range.prototype.getBoundingClientRect ??= () => new DOMRect();
+
 describe("GFMarkdownEditor", () => {
   it("renders the formatting toolbar by default", () => {
     render(<GFMarkdownEditor context={context} value="Hello" />);
 
     expect(screen.getByLabelText("Markdown formatting")).toBeTruthy();
+    const undoButton = screen.getByRole("button", { name: "Undo" });
+    const redoButton = screen.getByRole("button", { name: "Redo" });
+    expect(isDisabled(undoButton)).toBe(true);
+    expect(isDisabled(redoButton)).toBe(true);
+    expect(undoButton.getAttribute("aria-keyshortcuts")).toBe(
+      "Meta+Z Control+Z",
+    );
+    expect(redoButton.getAttribute("aria-keyshortcuts")).toBe(
+      "Meta+Shift+Z Control+Shift+Z Control+Y",
+    );
     expect(screen.getByTitle("Bold")).toBeTruthy();
     expect(screen.getByTitle("Keyboard input")).toBeTruthy();
     expect(screen.getByTitle("Code block")).toBeTruthy();
+  });
+
+  it("keeps undo and redo controls reactive across edits and shortcuts", async () => {
+    render(<GFMarkdownEditor context={context} value="- [ ] Task item" />);
+    const editor = document.querySelector(".gfmd-editor-surface") as HTMLElement;
+    const undoButton = screen.getByRole("button", { name: "Undo" });
+    const redoButton = screen.getByRole("button", { name: "Redo" });
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Mark task complete" }),
+    );
+    await waitFor(() => expect(isDisabled(undoButton)).toBe(false));
+
+    fireEvent.click(undoButton);
+    await waitFor(() => {
+      expect(
+        (
+          screen.getByRole("checkbox", {
+            name: "Mark task complete",
+          }) as HTMLInputElement
+        ).checked,
+      ).toBe(false);
+      expect(isDisabled(redoButton)).toBe(false);
+    });
+    expect(document.activeElement).toBe(editor);
+
+    fireEvent.keyDown(redoButton, { ctrlKey: true, key: "y" });
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("checkbox", {
+            name: "Mark task incomplete",
+          }) as HTMLInputElement
+        ).checked,
+      ).toBe(true),
+    );
+
+    fireEvent.keyDown(undoButton, { key: "z", metaKey: true });
+    await waitFor(() => expect(isDisabled(redoButton)).toBe(false));
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Mark task complete" }),
+    );
+    await waitFor(() => expect(isDisabled(redoButton)).toBe(true));
   });
 
   it("adds and removes keyboard input formatting from the toolbar", () => {
@@ -81,6 +138,92 @@ describe("GFMarkdownEditor", () => {
     );
 
     expect(screen.queryByLabelText("Markdown formatting")).toBeNull();
+  });
+
+  it("keeps keyboard history available when the toolbar is hidden", async () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        toolbar={false}
+        value="- [ ] Task item"
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Mark task complete" }),
+    );
+    const editor = document.querySelector(".gfmd-editor-surface") as HTMLElement;
+    const apple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+    fireEvent.keyDown(editor, {
+      ctrlKey: !apple,
+      key: "z",
+      metaKey: apple,
+    });
+
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("checkbox", {
+            name: "Mark task complete",
+          }) as HTMLInputElement
+        ).checked,
+      ).toBe(false),
+    );
+  });
+
+  it("retains history for controlled echoes and clears it for replacements", async () => {
+    let emitted = "";
+    const onChange = vi.fn((value: string) => {
+      emitted = value;
+    });
+    const rendered = render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value="- [ ] Task item"
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Mark task complete" }),
+    );
+    await waitFor(() => expect(emitted).toBe("- [x] Task item"));
+    rendered.rerender(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value={emitted}
+      />,
+    );
+    const undoButton = screen.getByRole("button", { name: "Undo" });
+    await waitFor(() => expect(isDisabled(undoButton)).toBe(false));
+
+    fireEvent.click(undoButton);
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("checkbox", {
+            name: "Mark task complete",
+          }) as HTMLInputElement
+        ).checked,
+      ).toBe(false),
+    );
+
+    rendered.rerender(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value="Replacement"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Replacement")).toBeTruthy();
+      expect(isDisabled(screen.getByRole("button", { name: "Undo" }))).toBe(
+        true,
+      );
+      expect(isDisabled(screen.getByRole("button", { name: "Redo" }))).toBe(
+        true,
+      );
+    });
   });
 
   it("renders task list checkboxes", () => {
@@ -963,6 +1106,12 @@ Body
       "```javascript\nconst value = 1;\n```",
       expect.anything(),
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(onChange).toHaveBeenLastCalledWith(
+      "```ts\nconst value = 1;\n```",
+      expect.anything(),
+    );
   });
 
   it("renders a clear formatting action in the toolbar", () => {
@@ -1115,6 +1264,35 @@ Body
 
     expect(screen.queryByLabelText("Link URL")).toBeNull();
     expect(screen.getByText("Replacement")).toBeTruthy();
+  });
+
+  it("leaves undo and redo shortcuts inside link fields to the input", () => {
+    const onChange = vi.fn();
+    render(
+      <GFMarkdownEditor
+        context={context}
+        onChange={onChange}
+        value="[Old](#old)"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit link" }));
+    fireEvent.change(screen.getByLabelText("Link URL"), {
+      target: { value: "#new" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit link" }));
+
+    const urlInput = screen.getByLabelText("Link URL") as HTMLInputElement;
+    fireEvent.change(urlInput, { target: { value: "#draft" } });
+    fireEvent.keyDown(urlInput, { ctrlKey: true, key: "y" });
+
+    expect(urlInput.value).toBe("#draft");
+    expect(onChange).toHaveBeenLastCalledWith(
+      "[Old](#old)",
+      expect.anything(),
+    );
   });
 
   it("preserves link marks when parsing clipboard HTML", () => {
@@ -2123,6 +2301,10 @@ function firstTextMarkNames(state: EditorState) {
   const textNode = state.doc.firstChild?.firstChild;
 
   return (textNode?.marks ?? []).map((mark) => mark.type.name);
+}
+
+function isDisabled(element: HTMLElement) {
+  return element.getAttribute("aria-disabled") === "true";
 }
 
 function runKey(state: EditorState, keyName: string) {
