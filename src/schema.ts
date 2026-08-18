@@ -16,6 +16,10 @@ import {
   safeHtmlMarkSpecs,
 } from "./features/html/schema";
 import {
+  githubMentionNodeSpec,
+  githubReferenceNodeSpec,
+} from "./features/references/schema";
+import {
   bulletListNodeSpec,
   listItemNodeSpec,
   orderedListNodeSpec,
@@ -144,6 +148,8 @@ export const gfmSchema = new Schema({
           `[^${node.attrs.label ?? node.attrs.identifier}]`,
         ],
       },
+      github_mention: githubMentionNodeSpec,
+      github_reference: githubReferenceNodeSpec,
       html_block_container: safeHtmlContainerNodeSpec,
       picture: pictureNodeSpec,
       raw_block: rawMarkdownNodeSpec(false),

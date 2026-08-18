@@ -1,5 +1,18 @@
 # Markdown compatibility
 
+## GitHub mentions and references
+
+Mentions and issue or pull-request references are GitHub rendering extensions,
+not part of GFM. The editor recognizes `@user`, `@organization/team`,
+`owner/repo#123`, and project-local `#123` tokens. Local references use the
+editor's required `{ owner, repo }` context; parsing never performs GitHub API
+enrichment and therefore represents issue and pull-request numbers uniformly.
+
+- Tokens remain selectable semantic inline nodes and serialize to their exact
+  Markdown source.
+- Explicit Markdown links and inline code are not reinterpreted.
+- GitHub-rendered mention and issue-link HTML is recognized on paste.
+
 ## GitHub alerts
 
 Alerts are a GitHub rendering extension, not part of GFM. The editor recognizes

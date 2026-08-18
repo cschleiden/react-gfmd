@@ -238,7 +238,9 @@ export function createLinkInteractionPlugin() {
           const target = event.target;
           if (
             !(target instanceof Element) ||
-            !target.closest("a[data-gfmd-link], a[data-gfmd-empty-link]")
+            !target.closest(
+              "a[data-gfmd-link], a[data-gfmd-empty-link], a[data-gfmd-mention], a[data-gfmd-reference]",
+            )
           ) {
             return false;
           }

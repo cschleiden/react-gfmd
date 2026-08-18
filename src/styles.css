@@ -410,10 +410,21 @@
 }
 
 .gfmd-editor-surface [data-gfmd-link],
-.gfmd-editor-surface [data-gfmd-empty-link] {
+.gfmd-editor-surface [data-gfmd-empty-link],
+.gfmd-editor-surface [data-gfmd-mention],
+.gfmd-editor-surface [data-gfmd-reference] {
   color: var(--gfmd-accent);
   text-decoration: underline;
   cursor: text;
+}
+
+.gfmd-editor-surface [data-gfmd-mention],
+.gfmd-editor-surface [data-gfmd-reference] {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--gfmd-accent) 8%, transparent);
+  cursor: default;
+  font-weight: 600;
+  text-decoration: none;
 }
 
 .gfmd-editor-surface [data-gfmd-empty-link] {

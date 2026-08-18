@@ -63,6 +63,12 @@ import {
   safeHtmlMarkToMdast,
 } from "./features/html";
 import {
+  createRemarkGitHubReferences,
+  parseGitHubMention,
+  parseGitHubReference,
+  projectTokenToMdast,
+} from "./features/references";
+import {
   isPhrasingContent,
   type FromProseMirrorState,
   type HandlerState,
@@ -73,6 +79,7 @@ import {
   isStandaloneHtmlElement,
 } from "./raw-html-regions";
 import { gfmSchema } from "./schema";
+import type { EditorContext } from "./types";
 
 const subscriptInlineTokenPattern = /@@GFMD_SUB\((.*?)\)@@/;
 const superscriptInlineTokenPattern = /@@GFMD_SUP\((.*?)\)@@/;
@@ -86,6 +93,8 @@ const markdownHandlers = {
   heading: toPmNode(gfmSchema.nodes.heading, (node) => ({ level: node.depth })),
   blockquote: parseBlockquote,
   githubAlert: parseAlert,
+  githubMention: parseGitHubMention,
+  githubReference: parseGitHubReference,
   details: parseDetails,
   detailsSummary: parseDetailsSummary,
   emojiShortcode: parseEmojiShortcode,
@@ -134,21 +143,6 @@ const markdownHandlers = {
   safeHtmlInline: parseSafeHtmlInline,
   table: parseTable,
 } satisfies RemarkProseMirrorOptions["handlers"];
-
-const markdownParser = unified()
-  .use(remarkParse)
-  .use(remarkGfm)
-  .use(createRemarkGitHubAlerts())
-  .use(createRemarkEmojiShortcodes())
-  .use(createRemarkEmptyTaskItems)
-  .use(createRemarkDetails(parseSummaryMarkdown))
-  .use(createRemarkGitHubHtml())
-  .use(createRemarkRawHtmlRegions())
-  .use(createRemarkInlineHtmlMarks)
-  .use(remarkProseMirror, {
-    schema: gfmSchema,
-    handlers: markdownHandlers,
-  });
 
 const markdownStringifier = unified().use(remarkGfm).use(remarkStringify, {
   bullet: "-",
@@ -215,6 +209,8 @@ const proseMirrorNodeHandlers: FromProseMirrorOptions<
     identifier: node.attrs.identifier,
     label: node.attrs.label ?? node.attrs.identifier,
   })),
+  github_mention: projectTokenToMdast,
+  github_reference: projectTokenToMdast,
   details: (node, parent, state) =>
     detailsToMdast(node, parent, state, stringifyMarkdownTree),
   details_summary: () => null,
@@ -274,14 +270,10 @@ const proseMirrorMarkHandlers: FromProseMirrorOptions<
   })),
 };
 
-const summaryParser = unified()
-  .use(remarkParse)
-  .use(remarkGfm)
-  .use(createRemarkEmojiShortcodes());
-
-export function parseWithRemark(markdown: string) {
+export function parseWithRemark(markdown: string, context?: EditorContext) {
   const normalizedMarkdown = markdown.replace(/\r\n?/g, "\n");
-  return markdownParser.processSync(normalizedMarkdown).result as ProseMirrorNode;
+  return createMarkdownParser(context).processSync(normalizedMarkdown)
+    .result as ProseMirrorNode;
 }
 
 export function serializeWithRemark(doc: ProseMirrorNode) {
@@ -292,6 +284,24 @@ export function serializeWithRemark(doc: ProseMirrorNode) {
   });
 
   return stringifyMarkdownTree(tree).trimEnd();
+}
+
+function createMarkdownParser(context?: EditorContext) {
+  return unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .use(createRemarkGitHubAlerts())
+    .use(createRemarkGitHubReferences(context))
+    .use(createRemarkEmojiShortcodes())
+    .use(createRemarkEmptyTaskItems)
+    .use(createRemarkDetails((value) => parseSummaryMarkdown(value, context)))
+    .use(createRemarkGitHubHtml())
+    .use(createRemarkRawHtmlRegions())
+    .use(createRemarkInlineHtmlMarks)
+    .use(remarkProseMirror, {
+      schema: gfmSchema,
+      handlers: markdownHandlers,
+    });
 }
 
 function stringifyMarkdownTree(tree: Root) {
@@ -615,8 +625,16 @@ function tableCellChildren(
     });
 }
 
-function parseSummaryMarkdown(value: string): PhrasingContent[] {
+function parseSummaryMarkdown(
+  value: string,
+  context?: EditorContext,
+): PhrasingContent[] {
   const encoded = encodeInlineHtmlMarks(value.trim());
+  const summaryParser = unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .use(createRemarkGitHubReferences(context))
+    .use(createRemarkEmojiShortcodes());
   const tree = summaryParser.runSync(summaryParser.parse(encoded), {
     value: encoded,
   }) as Root;

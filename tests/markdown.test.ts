@@ -11,14 +11,14 @@ describe("markdown", () => {
     expect(serializeMarkdown(doc)).toBe("");
   });
 
-  it("keeps issue-like references as plain text", () => {
-    const doc = parseMarkdown("Refs #1, GH-2, and owner/repo#3.");
+  it("keeps context-dependent references as plain text without context", () => {
+    const doc = parseMarkdown("Refs #1 and GH-2.");
     const paragraph = doc.firstChild!;
     const nodes: string[] = [];
     paragraph.forEach((node) => nodes.push(node.type.name));
 
     expect(nodes).toEqual(["text"]);
-    expect(serializeMarkdown(doc)).toBe("Refs #1, GH-2, and owner/repo#3.");
+    expect(serializeMarkdown(doc)).toBe("Refs #1 and GH-2.");
   });
 
   it("does not escape leading issue references", () => {

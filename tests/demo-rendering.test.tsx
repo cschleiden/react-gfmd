@@ -47,6 +47,7 @@ function renderingFingerprint(root: HTMLElement) {
         (link) =>
           !link.hasAttribute("data-footnote-ref") &&
           !link.hasAttribute("data-footnote-backref") &&
+          !link.hasAttribute("data-gfmd-reference") &&
           !link.classList.contains("user-mention") &&
           !link.querySelector("img"),
       )
