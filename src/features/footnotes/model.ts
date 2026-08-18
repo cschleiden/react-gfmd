@@ -79,6 +79,21 @@ export function footnoteEntry(
   return index.entries.get(normalizeFootnoteIdentifier(identifier));
 }
 
+export function footnoteDefinitionOrdinal(
+  index: FootnoteIndex,
+  identifier: string,
+) {
+  const entry = footnoteEntry(index, identifier);
+  if (!entry?.definitionPositions.length) return null;
+
+  const definitionIndex = index.definitions.findIndex(
+    (definition) =>
+      normalizeFootnoteIdentifier(definition.identifier) ===
+      normalizeFootnoteIdentifier(entry.identifier),
+  );
+  return definitionIndex >= 0 ? definitionIndex + 1 : null;
+}
+
 export function footnoteDefinitions(doc: ProseMirrorNode): FootnoteDefinition[] {
   return indexFootnotes(doc).definitions.map(({ identifier, label }) => ({
     identifier,

@@ -9,7 +9,7 @@ import {
   footnoteRenameError,
   renameFootnote,
 } from "./commands";
-import { footnoteEntry } from "./model";
+import { footnoteDefinitionOrdinal, footnoteEntry } from "./model";
 import { footnoteIndexForState } from "./plugin";
 
 export class FootnoteReferenceNodeView implements NodeView {
@@ -86,17 +86,22 @@ export class FootnoteReferenceNodeView implements NodeView {
       .scrollIntoView();
     this.view.dispatch(tr);
     const definitionDOM = this.view.nodeDOM(definitionPos);
-    const labelInput =
-      definitionDOM instanceof HTMLElement
-        ? definitionDOM.querySelector<HTMLInputElement>(".gfmd-footnote-label")
-        : null;
-    (labelInput ?? this.view.dom).focus();
+    if (definitionDOM instanceof HTMLElement) {
+      definitionDOM.focus({ preventScroll: true });
+    } else {
+      this.view.focus();
+    }
   };
 
   private render() {
     const label = displayLabel(this.node);
+    const index = footnoteIndexForState(this.view.state);
+    const ordinal = footnoteDefinitionOrdinal(
+      index,
+      String(this.node.attrs.identifier),
+    );
     this.dom.dataset.identifier = String(this.node.attrs.identifier);
-    this.button.textContent = label;
+    this.button.textContent = ordinal ? String(ordinal) : label;
     this.button.setAttribute(
       "aria-label",
       `Footnote ${label}; go to definition`,
@@ -109,9 +114,10 @@ export class FootnoteReferenceNodeView implements NodeView {
 export class FootnoteDefinitionNodeView implements NodeView {
   dom: HTMLElement;
   contentDOM: HTMLElement;
-  private header: HTMLElement;
+  private controls: HTMLElement;
+  private marker: HTMLElement;
+  private editLabelButton: HTMLButtonElement;
   private labelInput: HTMLInputElement;
-  private backReferences: HTMLElement;
   private status: HTMLElement;
 
   constructor(
@@ -121,33 +127,43 @@ export class FootnoteDefinitionNodeView implements NodeView {
     this.dom = document.createElement("section");
     this.dom.className = "gfmd-footnote-definition";
     this.dom.dataset.gfmdFootnoteDefinition = "";
+    this.dom.tabIndex = -1;
 
-    this.header = document.createElement("header");
-    this.header.className = "gfmd-footnote-definition-header";
-    this.header.contentEditable = "false";
+    this.marker = document.createElement("span");
+    this.marker.className = "gfmd-footnote-definition-marker";
+    this.marker.setAttribute("aria-hidden", "true");
 
-    const marker = document.createElement("span");
-    marker.className = "gfmd-footnote-definition-marker";
-    marker.textContent = "Footnote";
+    this.controls = document.createElement("div");
+    this.controls.className = "gfmd-footnote-definition-controls";
+    this.controls.contentEditable = "false";
+
+    this.editLabelButton = document.createElement("button");
+    this.editLabelButton.className = "gfmd-footnote-edit-label";
+    this.editLabelButton.type = "button";
+    this.editLabelButton.addEventListener("click", this.beginLabelEdit);
 
     this.labelInput = document.createElement("input");
     this.labelInput.className = "gfmd-footnote-label";
     this.labelInput.type = "text";
     this.labelInput.spellcheck = false;
+    this.labelInput.hidden = true;
     this.labelInput.addEventListener("change", this.commitLabel);
+    this.labelInput.addEventListener("blur", this.handleLabelBlur);
     this.labelInput.addEventListener("keydown", this.handleLabelKeyDown);
-
-    this.backReferences = document.createElement("nav");
-    this.backReferences.className = "gfmd-footnote-backreferences";
 
     this.status = document.createElement("span");
     this.status.className = "gfmd-visually-hidden";
     this.status.setAttribute("aria-live", "polite");
 
-    this.header.append(marker, this.labelInput, this.backReferences, this.status);
+    this.controls.append(
+      this.marker,
+      this.editLabelButton,
+      this.labelInput,
+      this.status,
+    );
     this.contentDOM = document.createElement("div");
     this.contentDOM.className = "gfmd-footnote-definition-content";
-    this.dom.append(this.header, this.contentDOM);
+    this.dom.append(this.controls, this.contentDOM);
     this.render();
   }
 
@@ -159,17 +175,32 @@ export class FootnoteDefinitionNodeView implements NodeView {
   }
 
   stopEvent(event: Event) {
-    return this.header.contains(event.target as Node);
+    return this.controls.contains(event.target as Node);
   }
 
   ignoreMutation(mutation: ViewMutationRecord) {
-    return this.header.contains(mutation.target);
+    return this.controls.contains(mutation.target);
   }
 
   destroy() {
+    this.editLabelButton.removeEventListener("click", this.beginLabelEdit);
     this.labelInput.removeEventListener("change", this.commitLabel);
+    this.labelInput.removeEventListener("blur", this.handleLabelBlur);
     this.labelInput.removeEventListener("keydown", this.handleLabelKeyDown);
   }
+
+  private beginLabelEdit = () => {
+    this.dom.dataset.editing = "";
+    this.editLabelButton.hidden = true;
+    this.labelInput.hidden = false;
+    this.labelInput.value = displayLabel(this.node);
+    this.labelInput.setCustomValidity("");
+    requestAnimationFrame(() => {
+      if (this.labelInput.hidden) return;
+      this.labelInput.focus();
+      this.labelInput.select();
+    });
+  };
 
   private commitLabel = () => {
     const identifier = String(this.node.attrs.identifier);
@@ -179,96 +210,60 @@ export class FootnoteDefinitionNodeView implements NodeView {
     if (error) {
       this.status.textContent = error;
       this.labelInput.reportValidity();
-      return;
+      return false;
     }
 
     const command = renameFootnote(identifier, label);
     if (command(this.view.state, this.view.dispatch, this.view)) {
       this.status.textContent = `Renamed footnote to ${label.trim()}.`;
+      this.finishLabelEdit();
+      return true;
     }
+    return false;
+  };
+
+  private handleLabelBlur = () => {
+    if (this.labelInput.validity.valid) this.finishLabelEdit();
   };
 
   private handleLabelKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      this.commitLabel();
-      this.view.focus();
+      if (this.commitLabel()) this.view.focus();
     } else if (event.key === "Escape") {
       this.labelInput.value = displayLabel(this.node);
       this.labelInput.setCustomValidity("");
       this.status.textContent = "";
-      this.view.focus();
+      this.finishLabelEdit(true);
     }
   };
 
-  private navigateToReference(referencePos: number) {
-    this.view.dispatch(
-      this.view.state.tr.setSelection(
-        TextSelection.create(
-          this.view.state.doc,
-          referencePos,
-          referencePos + 1,
-        ),
-      ),
-    );
-    const referenceDOM = this.view.nodeDOM(referencePos);
-    if (referenceDOM instanceof HTMLElement) {
-      const referenceButton =
-        referenceDOM.querySelector<HTMLButtonElement>(
-          ".gfmd-footnote-reference-button",
-        );
-      referenceButton?.focus({ preventScroll: true });
-      if (typeof referenceDOM.scrollIntoView === "function") {
-        referenceDOM.scrollIntoView({ block: "nearest" });
-      }
-    } else {
-      this.view.focus();
-    }
+  private finishLabelEdit(restoreFocus = false) {
+    delete this.dom.dataset.editing;
+    this.labelInput.hidden = true;
+    this.editLabelButton.hidden = false;
+    if (restoreFocus) this.editLabelButton.focus();
   }
 
   private render() {
     const label = displayLabel(this.node);
-    const referencePositions =
-      footnoteEntry(
-        footnoteIndexForState(this.view.state),
-        String(this.node.attrs.identifier),
-      )?.referencePositions ?? [];
+    const index = footnoteIndexForState(this.view.state);
+    const identifier = String(this.node.attrs.identifier);
+    const ordinal = footnoteDefinitionOrdinal(index, identifier);
     this.dom.dataset.identifier = String(this.node.attrs.identifier);
     this.dom.setAttribute("aria-label", `Footnote ${label} definition`);
+    this.marker.textContent = ordinal ? `${ordinal}.` : "\u2022";
     if (document.activeElement !== this.labelInput) {
       this.labelInput.value = label;
     }
     this.labelInput.setAttribute("aria-label", `Footnote ${label} label`);
     this.labelInput.title = "Edit footnote label";
-    this.renderBackReferences(label, referencePositions);
-  }
-
-  private renderBackReferences(label: string, positions: readonly number[]) {
-    this.backReferences.replaceChildren();
-    this.backReferences.setAttribute(
+    this.editLabelButton.textContent = label;
+    this.editLabelButton.setAttribute(
       "aria-label",
-      `References to footnote ${label}`,
+      `Edit footnote ${label} label`,
     );
-
-    const heading = document.createElement("span");
-    heading.className = "gfmd-footnote-backreferences-label";
-    heading.textContent = positions.length ? "Refs" : "No refs";
-    this.backReferences.append(heading);
-
-    positions.forEach((pos, index) => {
-      const ordinal = index + 1;
-      const button = document.createElement("button");
-      button.className = "gfmd-footnote-backreference";
-      button.type = "button";
-      button.textContent = String(ordinal);
-      button.title = `Go to reference ${ordinal}`;
-      button.setAttribute(
-        "aria-label",
-        `Go to reference ${ordinal} of ${positions.length} for footnote ${label}`,
-      );
-      button.addEventListener("click", () => this.navigateToReference(pos));
-      this.backReferences.append(button);
-    });
+    this.editLabelButton.title = `Edit Markdown label [^${label}]`;
   }
 }
 
