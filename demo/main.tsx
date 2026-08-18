@@ -147,7 +147,7 @@ without starting a new paragraph.
 
 Use <sub>subscript</sub>, <sup>superscript</sup>, and <ins>inserted text</ins> when raw HTML is appropriate.
 
-Color tokens remain code: \`#0969DA\`, \`rgb(9, 105, 218)\`, and \`hsl(212, 92%, 45%)\`.
+Color tokens remain editable code with live previews: \`#0969DA\`, \`rgb(9, 105, 218)\`, and \`hsl(212, 92%, 45%)\`.
 
 Emoji shortcodes remain source text: :+1: :shipit: :tada: :rocket: :octocat:
 

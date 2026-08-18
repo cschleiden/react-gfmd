@@ -13,6 +13,19 @@ enrichment and therefore represents issue and pull-request numbers uniformly.
 - Explicit Markdown links and inline code are not reinterpreted.
 - GitHub-rendered mention and issue-link HTML is recognized on paste.
 
+## GitHub color previews
+
+Color previews are a GitHub rendering extension, not part of GFM. Valid
+six-digit HEX, RGB, and HSL values inside inline code receive a small color
+swatch while the code remains editable.
+
+- The original inline-code source is preserved exactly in Markdown and on the
+  clipboard.
+- Swatches update as the color literal is edited and are omitted for invalid
+  values, color names, shorthand HEX, alpha channels, and fenced code blocks.
+- GitHub-rendered HTML containing a color swatch parses back to ordinary inline
+  code without adding the preview element to the document.
+
 ## GitHub alerts
 
 Alerts are a GitHub rendering extension, not part of GFM. The editor recognizes

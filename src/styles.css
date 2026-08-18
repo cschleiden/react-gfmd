@@ -715,6 +715,19 @@
   vertical-align: middle;
 }
 
+.gfmd-color-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 0.25rem;
+  border: 1px solid var(--gfmd-border);
+  border-radius: 50%;
+  vertical-align: 0.05em;
+  forced-color-adjust: none;
+  pointer-events: none;
+  user-select: none;
+}
+
 .gfmd-editor-surface .gfmd-task-list-item {
   position: relative;
   list-style: none;

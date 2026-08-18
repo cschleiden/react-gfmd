@@ -21,6 +21,7 @@ import type {
 import { createAutolinkPlugin } from "./autolink";
 import { createMarkdownClipboardPlugin } from "./clipboard";
 import { CodeBlockNodeView } from "./features/code-block";
+import { createGitHubColorPlugin } from "./features/colors";
 import {
   createFootnotePlugin,
   FootnoteDefinitionNodeView,
@@ -143,6 +144,7 @@ function createPlugins(options: CreateGFMarkdownStateOptions): Plugin[] {
     history(),
     reactKeys(),
     createAutolinkPlugin(),
+    createGitHubColorPlugin(),
     keymap({
       Enter: splitCurrentListItem(),
       Backspace: outdentNestedListItemAtStart(),
