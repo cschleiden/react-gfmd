@@ -125,10 +125,18 @@ function footnoteFingerprint(root: HTMLElement) {
     "[data-gfmd-footnote-definition]",
   );
   if (editorDefinitions.length > 0) {
-    return editorDefinitions.map((definition) => ({
-      identifier: definition.dataset.identifier,
-      text: text(definition.querySelector(".gfmd-footnote-definition-content")),
-    }));
+    return editorDefinitions.map((definition) => {
+      const content = definition
+        .querySelector(".gfmd-footnote-definition-content")
+        ?.cloneNode(true) as HTMLElement | undefined;
+      content
+        ?.querySelectorAll("[data-footnote-backref]")
+        .forEach((backReference) => backReference.remove());
+      return {
+        identifier: definition.dataset.identifier,
+        text: text(content ?? null),
+      };
+    });
   }
 
   return elements<HTMLLIElement>(root, "[data-footnotes] > ol > li").map(

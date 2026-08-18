@@ -511,33 +511,31 @@
 }
 
 .gfmd-footnote-reference {
-  margin: 0 1px;
+  margin: 0 2px;
   vertical-align: super;
   font-size: 0.75em;
   line-height: 0;
 }
 
 .gfmd-footnote-reference-button {
-  min-width: 1.35em;
-  height: 1.35em;
-  padding: 0 0.25em;
+  min-width: 1em;
+  padding: 0;
   border: 0;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--gfmd-accent) 10%, transparent);
+  background: transparent;
   color: var(--gfmd-accent);
   cursor: pointer;
   font: inherit;
-  font-weight: 650;
-  line-height: 1;
+  font-weight: 600;
+  line-height: inherit;
 }
 
 .gfmd-footnote-reference-button:hover {
-  background: color-mix(in srgb, var(--gfmd-accent) 18%, transparent);
   text-decoration: underline;
 }
 
 .gfmd-footnote-reference-button:focus-visible,
 .gfmd-footnote-label:focus-visible,
+.gfmd-footnote-edit-label:focus-visible,
 .gfmd-footnote-backreference:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--gfmd-accent) 45%, transparent);
   outline-offset: 2px;
@@ -545,6 +543,7 @@
 
 .gfmd-footnote-reference[data-selected] {
   border-radius: 3px;
+  background: color-mix(in srgb, var(--gfmd-accent) 10%, transparent);
   outline: 2px solid color-mix(in srgb, var(--gfmd-accent) 35%, transparent);
 }
 
@@ -554,27 +553,54 @@
 }
 
 .gfmd-footnote-definition {
-  margin: 16px 0;
+  display: flow-root;
+  margin: 24px 0 0;
+  padding-top: 16px;
   border-top: 1px solid var(--gfmd-border);
   color: var(--gfmd-fg);
 }
 
-.gfmd-footnote-definition-header {
-  display: flex;
+.gfmd-footnote-definition + .gfmd-footnote-definition {
+  margin-top: 0;
+  padding-top: 8px;
+  border-top: 0;
+}
+
+.gfmd-footnote-definition:focus {
+  outline: none;
+}
+
+.gfmd-footnote-definition:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid color-mix(in srgb, var(--gfmd-accent) 35%, transparent);
+  outline-offset: 3px;
+}
+
+.gfmd-footnote-definition-controls {
+  float: inline-start;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 36px;
+  gap: 6px;
+  max-inline-size: 45%;
+  min-height: 24px;
+  margin-inline-end: 6px;
   color: var(--gfmd-muted-fg);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .gfmd-footnote-definition-marker {
+  flex: 0 0 auto;
+  color: var(--gfmd-muted-fg);
   font-weight: 600;
+  line-height: 24px;
 }
 
 .gfmd-footnote-label {
-  width: min(18ch, 40%);
-  height: 26px;
+  width: 18ch;
+  max-width: 100%;
+  height: 24px;
+  box-sizing: border-box;
   padding: 0 6px;
   border: 1px solid var(--gfmd-border);
   border-radius: 4px;
@@ -583,46 +609,95 @@
   font: inherit;
 }
 
+.gfmd-footnote-definition[data-editing] .gfmd-footnote-definition-controls {
+  float: none;
+  max-inline-size: 100%;
+  margin: 0 0 4px;
+}
+
 .gfmd-footnote-label:invalid {
   border-color: var(--gfmd-danger);
 }
 
 .gfmd-footnote-backreferences {
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
+  margin-inline-start: 4px;
+  vertical-align: baseline;
+}
+
+.gfmd-footnote-backreferences[data-block] {
+  display: flex;
+  margin: 4px 0 0;
 }
 
 .gfmd-footnote-backreferences-label {
-  margin-right: 2px;
-  color: var(--gfmd-muted-fg);
-  font-size: 11px;
-  font-weight: 600;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .gfmd-footnote-backreference {
-  min-width: 24px;
-  height: 24px;
-  padding: 0 5px;
-  border: 1px solid var(--gfmd-border);
-  border-radius: 4px;
-  background: var(--gfmd-canvas);
+  min-width: 18px;
+  height: 22px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
   color: var(--gfmd-accent);
   font: inherit;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
 }
 
 .gfmd-footnote-backreference:hover {
-  border-color: color-mix(in srgb, var(--gfmd-border) 50%, var(--gfmd-accent));
+  text-decoration: underline;
+}
+
+.gfmd-footnote-edit-label {
+  max-width: 18ch;
+  height: 24px;
+  padding: 0 3px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--gfmd-muted-fg);
+  cursor: pointer;
+  font: 12px/24px ui-monospace, SFMono-Regular, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gfmd-footnote-edit-label::before {
+  content: "[^";
+}
+
+.gfmd-footnote-edit-label::after {
+  content: "]";
+}
+
+.gfmd-footnote-edit-label:hover,
+.gfmd-footnote-edit-label:focus-visible {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.gfmd-footnote-edit-label:hover {
   background: var(--gfmd-subtle);
+  color: var(--gfmd-accent);
 }
 
 .gfmd-footnote-definition-content {
-  padding-left: 20px;
+  min-width: 0;
 }
 
 .gfmd-footnote-definition-content > :last-child {

@@ -17,12 +17,12 @@ import {
   renameFootnote,
   serializeMarkdown,
 } from "../src";
-import { FootnoteDefinitionNodeView } from "../src/features/footnotes";
+import { navigateToFootnoteReference } from "../src/features/footnotes/plugin";
 
 const context = { owner: "cschleiden", repo: "react-gfmd" };
 
 describe("footnote editing", () => {
-  it("renders accessible references and editable structured definitions", () => {
+  it("renders GitHub-like references and structured definitions", () => {
     render(
       <GFMarkdownEditor
         context={context}
@@ -40,6 +40,21 @@ describe("footnote editing", () => {
         name: "Footnote note definition",
       }),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: "Footnote note; go to definition",
+      }).textContent,
+    ).toBe("1");
+    expect(
+      screen.getByRole("button", {
+        name: "Edit footnote note label",
+      }).textContent,
+    ).toBe("note");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Edit footnote note label",
+      }),
+    );
     expect(
       screen.getByRole("textbox", {
         name: "Footnote note label",
@@ -130,6 +145,11 @@ describe("footnote editing", () => {
       />,
     );
 
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Edit footnote note label",
+      }),
+    );
     fireEvent.change(
       screen.getByRole("textbox", {
         name: "Footnote note label",
@@ -158,6 +178,11 @@ describe("footnote editing", () => {
       />,
     );
 
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Edit footnote a label",
+      }),
+    );
     const collisionInput = screen.getByRole("textbox", {
       name: "Footnote a label",
     });
@@ -177,6 +202,11 @@ describe("footnote editing", () => {
         value={"See[^note].\n\n[^note]: Body."}
       />,
     );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Edit footnote note label",
+      }),
+    );
     const invalidInput = screen.getByRole("textbox", {
       name: "Footnote note label",
     });
@@ -184,7 +214,44 @@ describe("footnote editing", () => {
     expect((invalidInput as HTMLInputElement).validationMessage).toContain(
       "without spaces or brackets",
     );
+    fireEvent.blur(invalidInput);
+    expect(
+      screen.getByRole("textbox", {
+        name: "Footnote note label",
+      }),
+    ).toBeTruthy();
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("closes an unchanged label editor on blur", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        value={"See[^note].\n\n[^note]: Body."}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Edit footnote note label",
+      }),
+    );
+
+    fireEvent.blur(
+      screen.getByRole("textbox", {
+        name: "Footnote note label",
+      }),
+    );
+
+    expect(
+      screen.queryByRole("textbox", {
+        name: "Footnote note label",
+      }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", {
+        name: "Edit footnote note label",
+      }),
+    ).toBeTruthy();
   });
 
   it("navigates between references and definitions", () => {
@@ -201,7 +268,7 @@ describe("footnote editing", () => {
       }),
     );
     expect(document.activeElement).toBe(
-      screen.getByRole("textbox", { name: "Footnote note label" }),
+      screen.getByRole("region", { name: "Footnote note definition" }),
     );
 
     fireEvent.click(
@@ -225,9 +292,6 @@ describe("footnote editing", () => {
       value: "See[^note].\n\n[^note]: Body.",
     });
     const referencePos = findNodePosition(state, "footnote_reference");
-    const definitionPos = findNodePosition(state, "footnote_definition");
-    const definition = state.doc.nodeAt(definitionPos);
-    expect(definition).not.toBeNull();
 
     const view = {
       get state() {
@@ -239,11 +303,7 @@ describe("footnote editing", () => {
       focus: vi.fn(),
       nodeDOM: vi.fn(() => null),
     } as unknown as EditorView;
-    const nodeView = new FootnoteDefinitionNodeView(definition!, view);
-    const backReference = nodeView.dom.querySelector<HTMLButtonElement>(
-      ".gfmd-footnote-backreference",
-    );
-    backReference?.click();
+    navigateToFootnoteReference(view, referencePos);
 
     expect(state.selection).toBeInstanceOf(TextSelection);
     expect(state.selection.from).toBe(referencePos);
@@ -264,8 +324,9 @@ describe("footnote editing", () => {
     const second = screen.getByRole("button", {
       name: "Go to reference 2 of 2 for footnote note",
     });
-    expect(first.textContent).toBe("1");
-    expect(second.textContent).toBe("2");
+    expect(first.textContent).toBe("↩");
+    expect(second.textContent).toBe("↩2");
+    expect(first.closest("p")).not.toBeNull();
 
     fireEvent.click(second);
     const references = document.querySelectorAll(".gfmd-footnote-reference");
@@ -437,6 +498,38 @@ describe("footnote editing", () => {
     });
     expect(screen.queryByText("Old body.")).toBeNull();
     expect(screen.getByText("New body.")).toBeTruthy();
+  });
+
+  it("renumbers references when definition order changes", async () => {
+    const { rerender } = render(
+      <GFMarkdownEditor
+        context={context}
+        value={
+          "First[^first], second[^second].\n\n[^first]: One.\n\n[^second]: Two."
+        }
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", {
+        name: "Footnote second; go to definition",
+      }).textContent,
+    ).toBe("2");
+
+    rerender(
+      <GFMarkdownEditor
+        context={context}
+        value={"Only second[^second].\n\n[^second]: Two."}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", {
+          name: "Footnote second; go to definition",
+        }).textContent,
+      ).toBe("1");
+    });
   });
 });
 
