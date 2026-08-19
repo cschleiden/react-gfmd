@@ -5,6 +5,7 @@ export interface GFMarkdownEditorProps {
   value: string;
   context: EditorContext;
   onChange?: (markdown: string, doc: ProseMirrorNode) => void;
+  onChangeDebounceMs?: number;
   placeholder?: string;
   className?: string;
   toolbar?: boolean;

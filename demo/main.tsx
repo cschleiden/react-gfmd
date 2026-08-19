@@ -174,6 +174,7 @@ export function App() {
           <GFMarkdownEditor
             context={{ owner: "cschleiden", repo: "react-gfmd" }}
             onChange={setMarkdown}
+            onChangeDebounceMs={150}
             value={markdown}
           />
         </section>

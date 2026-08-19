@@ -40,7 +40,6 @@ describe("demo rendering", () => {
         value={initialMarkdown}
       />,
     );
-    await act(async () => {});
     const editor = document.querySelector<HTMLElement>(".gfmd-editor-surface");
     expect(editor).not.toBeNull();
 
@@ -91,12 +90,13 @@ function renderingFingerprint(root: HTMLElement) {
       open: (details as HTMLDetailsElement).open,
       summary: text(details.querySelector(":scope > summary")),
     })),
-    images: elements<HTMLImageElement>(comparable, "img:not(.emoji)").map(
-      (image) => [
-        image.getAttribute("alt"),
-        image.getAttribute("data-canonical-src") ?? image.getAttribute("src"),
-      ],
-    ),
+    images: elements<HTMLImageElement>(
+      comparable,
+      "img:not(.emoji):not(.ProseMirror-separator)",
+    ).map((image) => [
+      image.getAttribute("alt"),
+      image.getAttribute("data-canonical-src") ?? image.getAttribute("src"),
+    ]),
     customEmoji: elements<HTMLImageElement>(comparable, "img.emoji").map(
       (image) => image.getAttribute("alt"),
     ),

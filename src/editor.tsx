@@ -1,18 +1,15 @@
-import {
-  ProseMirror,
-  ProseMirrorDoc,
-  reactKeys,
-  useEditorEffect,
-} from "@handlewithcare/react-prosemirror";
 import { inputRules } from "@handlewithcare/prosemirror-inputrules";
 import { baseKeymap, toggleMark } from "prosemirror-commands";
 import { history, redo, undo } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
 import type { Node as ProseMirrorNode } from "prosemirror-model";
 import { DOMParser as ProseMirrorDOMParser } from "prosemirror-model";
-import { EditorState, Plugin, type Transaction } from "prosemirror-state";
+import { EditorState, Plugin } from "prosemirror-state";
 import { tableEditing } from "prosemirror-tables";
-import type { EditorView } from "prosemirror-view";
+import {
+  EditorView,
+  type DirectEditorProps,
+} from "prosemirror-view";
 import * as React from "react";
 import type {
   CreateGFMarkdownStateOptions,
@@ -55,18 +52,89 @@ export function createGFMarkdownState(
 }
 
 export function GFMarkdownEditor(props: GFMarkdownEditorProps) {
+  const hostRef = React.useRef<HTMLDivElement | null>(null);
+  const viewRef = React.useRef<EditorView | null>(null);
   const latestProps = React.useRef(props);
   latestProps.current = props;
   const lastAppliedValueRef = React.useRef(props.value);
   const lastAppliedContextRef = React.useRef(contextKey(props.context));
-
-  const [editorState, setEditorState] = React.useState<EditorState>(() =>
-    createGFMarkdownState(props),
-  );
+  const pendingChangeRef = React.useRef<PendingChange | null>(null);
+  const [editorState, setEditorState] = React.useState<EditorState | null>(null);
   const [editorView, setEditorView] = React.useState<EditorView | null>(null);
-  const nodeViews = React.useMemo(() => createNodeViews(latestProps), []);
+
+  const clearPendingChange = React.useCallback(() => {
+    const pending = pendingChangeRef.current;
+    if (!pending) return;
+    globalThis.clearTimeout(pending.timer);
+    pendingChangeRef.current = null;
+  }, []);
+
+  const emitChange = React.useCallback(() => {
+    const pending = pendingChangeRef.current;
+    if (!pending) return;
+    globalThis.clearTimeout(pending.timer);
+    pendingChangeRef.current = null;
+
+    const onChange = latestProps.current.onChange;
+    if (!onChange) return;
+    const markdown = serializeMarkdown(pending.doc);
+    lastAppliedValueRef.current = markdown;
+    onChange(markdown, pending.doc);
+  }, []);
+
+  const scheduleChange = React.useCallback(
+    (doc: ProseMirrorNode) => {
+      if (!latestProps.current.onChange) return;
+      clearPendingChange();
+
+      const delay = Math.max(0, latestProps.current.onChangeDebounceMs ?? 0);
+      if (delay === 0) {
+        pendingChangeRef.current = { doc, timer: 0 };
+        emitChange();
+        return;
+      }
+
+      const timer = globalThis.setTimeout(emitChange, delay);
+      pendingChangeRef.current = { doc, timer };
+    },
+    [clearPendingChange, emitChange],
+  );
+
+  React.useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (!host) return undefined;
+
+    const state = createGFMarkdownState(latestProps.current);
+    // Keep the document on ProseMirror's incremental DOM renderer. React still
+    // owns the toolbar and the isolated React roots mounted by custom node views.
+    const view = new EditorView(host, {
+      attributes: editorAttributes(latestProps.current),
+      dispatchTransaction(transaction) {
+        const nextState = view.state.apply(transaction);
+        view.updateState(nextState);
+        setEditorState(nextState);
+        if (transaction.docChanged) scheduleChange(nextState.doc);
+      },
+      nodeViews: createNodeViews(latestProps),
+      state,
+    });
+    const handleBlur = () => emitChange();
+    view.dom.addEventListener("blur", handleBlur, true);
+
+    viewRef.current = view;
+    setEditorState(state);
+    setEditorView(view);
+    return () => {
+      view.dom.removeEventListener("blur", handleBlur, true);
+      emitChange();
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, [emitChange, scheduleChange]);
 
   React.useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
     const nextContextKey = contextKey(props.context);
     if (
       props.value === lastAppliedValueRef.current &&
@@ -74,25 +142,19 @@ export function GFMarkdownEditor(props: GFMarkdownEditorProps) {
     ) {
       return;
     }
+    clearPendingChange();
     lastAppliedValueRef.current = props.value;
     lastAppliedContextRef.current = nextContextKey;
-    setEditorState(createGFMarkdownState(latestProps.current));
+    const nextState = createGFMarkdownState(latestProps.current);
+    view.updateState(nextState);
+    setEditorState(nextState);
   }, [props.context.owner, props.context.repo, props.value]);
 
-  const dispatchTransaction = React.useCallback((transaction: Transaction) => {
-    setEditorState((state) => {
-      const nextState = state.apply(transaction);
-      if (transaction.docChanged) {
-        lastAppliedValueRef.current = serializeMarkdown(nextState.doc);
-        latestProps.current.onChange?.(
-          lastAppliedValueRef.current,
-          nextState.doc,
-        );
-      }
-
-      return nextState;
+  React.useEffect(() => {
+    viewRef.current?.setProps({
+      attributes: editorAttributes(props),
     });
-  }, []);
+  }, [props.placeholder]);
 
   return (
     <div className={["gfmd-editor", props.className].filter(Boolean).join(" ")}>
@@ -103,46 +165,32 @@ export function GFMarkdownEditor(props: GFMarkdownEditorProps) {
           view={editorView}
         />
       ) : null}
-      <ProseMirror
-        attributes={{
-          class: "gfmd-editor-surface",
-          "data-placeholder": props.placeholder ?? "",
-        }}
-        dispatchTransaction={dispatchTransaction}
-        nodeViews={nodeViews}
-        state={editorState}
-      >
-        <ProseMirrorDoc />
-        <EditorViewObserver onViewChange={setEditorView} />
-      </ProseMirror>
+      <div ref={hostRef} />
     </div>
   );
+}
+
+interface PendingChange {
+  doc: ProseMirrorNode;
+  timer: ReturnType<typeof globalThis.setTimeout>;
 }
 
 function contextKey(context: GFMarkdownEditorProps["context"]) {
   return `${context.owner}\0${context.repo}`;
 }
 
-function EditorViewObserver({
-  onViewChange,
-}: {
-  onViewChange: React.Dispatch<React.SetStateAction<EditorView | null>>;
-}) {
-  useEditorEffect(
-    (view) => {
-      onViewChange(view);
-      return () => onViewChange(null);
-    },
-    [onViewChange],
-  );
-
-  return null;
+function editorAttributes(
+  props: Pick<GFMarkdownEditorProps, "placeholder">,
+): NonNullable<DirectEditorProps["attributes"]> {
+  return {
+    class: "gfmd-editor-surface",
+    "data-placeholder": props.placeholder ?? "",
+  };
 }
 
 function createPlugins(options: CreateGFMarkdownStateOptions): Plugin[] {
   return [
     history(),
-    reactKeys(),
     createAutolinkPlugin(),
     createGitHubColorPlugin(),
     keymap({

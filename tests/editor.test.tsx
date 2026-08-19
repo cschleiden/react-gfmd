@@ -140,6 +140,71 @@ describe("GFMarkdownEditor", () => {
     expect(screen.queryByLabelText("Markdown formatting")).toBeNull();
   });
 
+  it("coalesces Markdown serialization when onChange is debounced", async () => {
+    vi.useFakeTimers();
+    try {
+      const onChange = vi.fn();
+      render(
+        <GFMarkdownEditor
+          context={context}
+          onChange={onChange}
+          onChangeDebounceMs={100}
+          value="- [ ] Task item"
+        />,
+      );
+
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Mark task complete" }),
+      );
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Mark task incomplete" }),
+      );
+      expect(onChange).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenLastCalledWith(
+        "- [ ] Task item",
+        expect.anything(),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("discards a pending debounced change when controlled content replaces it", async () => {
+    vi.useFakeTimers();
+    try {
+      const onChange = vi.fn();
+      const rendered = render(
+        <GFMarkdownEditor
+          context={context}
+          onChange={onChange}
+          onChangeDebounceMs={100}
+          value="- [ ] Task item"
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Mark task complete" }),
+      );
+
+      rendered.rerender(
+        <GFMarkdownEditor
+          context={context}
+          onChange={onChange}
+          onChangeDebounceMs={100}
+          value="Replacement"
+        />,
+      );
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(onChange).not.toHaveBeenCalled();
+      expect(screen.getByText("Replacement")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps keyboard history available when the toolbar is hidden", async () => {
     render(
       <GFMarkdownEditor
