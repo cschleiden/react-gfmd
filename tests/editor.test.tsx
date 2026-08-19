@@ -1835,6 +1835,21 @@ b](#old)`,
     ]);
   });
 
+  it("rejects non-link tokens before evaluating changed ranges", () => {
+    const plainText = Array.from({ length: 1_000 }, () => "plain").join(" ");
+    const includeToken = vi.fn(() => true);
+    const url = "https://example.com";
+
+    expect(autolinkRanges(`${plainText} ${url}`, includeToken)).toEqual([
+      {
+        from: plainText.length + 1,
+        to: plainText.length + 1 + url.length,
+        href: url,
+      },
+    ]);
+    expect(includeToken).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves overlapping strong marks when auto-linking", () => {
     let state = createGFMarkdownState({
       context,
