@@ -2,6 +2,15 @@ import { Fragment, Slice } from "prosemirror-model";
 import { closeHistory } from "prosemirror-history";
 import { Plugin, type Selection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
+import {
+  hasDetailsInsertionForbiddenAncestor,
+  hasEmptyLeadingListParagraph,
+  insertDetailsWithoutDeletingSelection,
+  insertedDetailsPosition,
+  introducesUnexpectedEmptyTextblocks,
+  loosenDetailsListAncestors,
+  standaloneDetailsNode,
+} from "./features/details/transactions";
 import { isListNode } from "./lists/utils";
 import { parseMarkdown, serializeMarkdown } from "./markdown";
 import { gfmSchema } from "./schema";
@@ -45,8 +54,47 @@ export function createMarkdownClipboardPlugin(context: EditorContext) {
           view.composing ? closeHistoryBeforeClipboardChange(view) : false,
       },
       handlePaste: (view, _event, slice) => {
-        if (slice.size) closeHistoryBeforeClipboardChange(view);
-        return false;
+        if (!slice.size) return false;
+        const details = standaloneDetailsNode(slice);
+        if (!details) {
+          closeHistoryBeforeClipboardChange(view);
+          return false;
+        }
+        if (
+          hasDetailsInsertionForbiddenAncestor(view.state.selection.$from) ||
+          hasDetailsInsertionForbiddenAncestor(view.state.selection.$to)
+        ) {
+          return true;
+        }
+
+        closeHistoryBeforeClipboardChange(view);
+        let transaction = view.state.tr
+          .replaceSelectionWith(details, false)
+          .setMeta("uiEvent", "paste");
+        let detailsPos = insertedDetailsPosition(transaction, details);
+        if (
+          detailsPos !== null &&
+          (hasEmptyLeadingListParagraph(transaction.doc, detailsPos) ||
+            introducesUnexpectedEmptyTextblocks(transaction, details))
+        ) {
+          transaction = insertDetailsWithoutDeletingSelection(
+            view.state,
+            details,
+          ).setMeta("uiEvent", "paste");
+          detailsPos = insertedDetailsPosition(transaction, details);
+        }
+        if (
+          detailsPos === null ||
+          hasEmptyLeadingListParagraph(transaction.doc, detailsPos) ||
+          introducesUnexpectedEmptyTextblocks(transaction, details)
+        ) {
+          return true;
+        }
+
+        loosenDetailsListAncestors(transaction, detailsPos);
+        view.dispatch(transaction.scrollIntoView());
+        clearPendingClipboardChange();
+        return true;
       },
     },
   });
@@ -70,7 +118,14 @@ export function parseMarkdownClipboardText(
   markdown: string,
   context?: EditorContext,
 ) {
-  return Slice.maxOpen(parseMarkdown(markdown, context).content, true);
+  const doc = parseMarkdown(markdown, context);
+  if (
+    doc.childCount === 1 &&
+    doc.firstChild?.type === gfmSchema.nodes.details
+  ) {
+    return new Slice(doc.content, 0, 0);
+  }
+  return Slice.maxOpen(doc.content, true);
 }
 
 export function serializeMarkdownClipboardSlice(

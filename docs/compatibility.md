@@ -63,6 +63,26 @@ source and is never executed by the editor.
 - `<details>` is converted to its existing structured rich-text node. Supported
   standalone `<img>` tags are converted to Markdown image nodes.
 
+### Details insertion and editing
+
+Details blocks are a GitHub rendering extension, not part of GFM. The toolbar
+inserts a closed `<details>` block without rendering raw HTML in the editor.
+
+- New blocks use the same `Details` default as GitHub's implicit summary and an
+  empty editable body paragraph. The summary is emitted explicitly, and empty
+  details bodies are restored as editable paragraphs when Markdown is parsed.
+- Supported text and block selections move into the body with their inline
+  formatting and nested structure intact. When a selection cannot be moved
+  safely, insertion does not delete the selected content.
+- Summary and body content remain ordinary editable rich text. Inserted blocks
+  use an explicit `<summary>` element so summary edits serialize directly.
+- Details can be inserted inside schema-valid block containers such as list
+  items and blockquotes. Insertion is unavailable where block content cannot be
+  represented safely, including details summaries, definition terms, and table
+  cells.
+- Markdown and HTML clipboard data preserve the structured details node. The
+  editor does not execute arbitrary HTML or add a separate details renderer.
+
 ## Unsupported and malformed HTML
 
 - When remark parses Markdown between a balanced unsupported block HTML opener
