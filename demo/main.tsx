@@ -178,8 +178,14 @@ export function App() {
           />
         </section>
         <section className="demo-pane">
-          <h2>Raw Markdown</h2>
-          <pre className="demo-markdown">{formatMarkdownPreview(markdown)}</pre>
+          <h2 id="raw-markdown-heading">Raw Markdown</h2>
+          <textarea
+            aria-labelledby="raw-markdown-heading"
+            className="demo-markdown"
+            onChange={(event) => setMarkdown(event.currentTarget.value)}
+            spellCheck={false}
+            value={formatMarkdownPreview(markdown)}
+          />
         </section>
       </div>
     </main>

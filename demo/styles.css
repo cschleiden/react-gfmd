@@ -54,17 +54,27 @@ section {
 
 .demo-markdown {
   box-sizing: border-box;
-  min-height: 100%;
+  width: 100%;
+  min-height: 480px;
+  flex: 1;
   margin: 0;
   overflow: auto;
   padding: 16px;
   border: 1px solid #d1d9e0;
   border-radius: 6px;
   background: #ffffff;
+  color: inherit;
+  resize: vertical;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono",
     monospace;
+}
+
+.demo-markdown:focus {
+  border-color: #0969da;
+  outline: 2px solid #0969da;
+  outline-offset: -1px;
 }
 
 .gfmd-editor-surface h1,
