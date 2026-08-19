@@ -125,7 +125,7 @@ export const taskListItemNodeSpec: NodeSpec = {
           class: "gfmd-task-checkbox",
           "data-gfmd-task-checkbox": "",
           contenteditable: "false",
-          ...(checked ? { checked: "" } : {}),
+          checked,
           readOnly: true,
           "aria-label": checked ? "Mark task incomplete" : "Mark task complete",
         },

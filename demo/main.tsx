@@ -155,10 +155,6 @@ Emoji shortcodes remain source text: :+1: :shipit: :tada: :rocket: :octocat:
 [Jump back to the round-trip anchor](#round-trip)
 `;
 
-export function formatMarkdownPreview(markdown: string) {
-  return markdown.replaceAll("&#x20;", " ");
-}
-
 export function App() {
   const [markdown, setMarkdown] = React.useState(initialMarkdown);
 
@@ -185,7 +181,7 @@ export function App() {
             className="demo-markdown"
             onChange={(event) => setMarkdown(event.currentTarget.value)}
             spellCheck={false}
-            value={formatMarkdownPreview(markdown)}
+            value={markdown}
           />
         </section>
       </div>

@@ -205,6 +205,47 @@ describe("GFMarkdownEditor", () => {
     }
   });
 
+  it("preserves a pending debounced change when context changes", async () => {
+    vi.useFakeTimers();
+    try {
+      const onChange = vi.fn();
+      const rendered = render(
+        <GFMarkdownEditor
+          context={context}
+          onChange={onChange}
+          onChangeDebounceMs={100}
+          value="- [ ] Task item"
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Mark task complete" }),
+      );
+
+      rendered.rerender(
+        <GFMarkdownEditor
+          context={{ owner: context.owner, repo: "another-repo" }}
+          onChange={onChange}
+          onChangeDebounceMs={100}
+          value="- [ ] Task item"
+        />,
+      );
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenLastCalledWith(
+        "- [x] Task item",
+        expect.anything(),
+      );
+      expect(
+        screen.getByRole("checkbox", { name: "Mark task incomplete" }),
+      ).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(onChange).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps keyboard history available when the toolbar is hidden", async () => {
     render(
       <GFMarkdownEditor

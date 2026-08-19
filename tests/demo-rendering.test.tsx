@@ -3,15 +3,23 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { act } from "react";
 import { describe, expect, it } from "vitest";
-import { App, formatMarkdownPreview, initialMarkdown } from "../demo/main";
+import { App, initialMarkdown } from "../demo/main";
 import { GFMarkdownEditor } from "../src";
 import githubRenderedHtml from "./fixtures/demo.github.html?raw";
 
 const context = { owner: "cschleiden", repo: "react-gfmd" };
 
 describe("demo rendering", () => {
-  it("shows serialized trailing spaces as whitespace instead of entities", () => {
-    expect(formatMarkdownPreview("df&#x20;")).toBe("df ");
+  it("keeps encoded whitespace editable as Markdown source", async () => {
+    render(<App />);
+    const textarea = screen.getByRole<HTMLTextAreaElement>("textbox", {
+      name: "Raw Markdown",
+    });
+
+    fireEvent.change(textarea, { target: { value: "typed&#x20;" } });
+    await act(async () => {});
+
+    expect(textarea.value).toBe("typed&#x20;");
   });
 
   it("edits raw Markdown through a textarea and updates the rich editor", async () => {
