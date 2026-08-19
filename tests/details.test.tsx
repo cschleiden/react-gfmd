@@ -30,6 +30,9 @@ import {
   withSelection,
 } from "./list-test-helpers";
 
+Range.prototype.getClientRects ??= () => [] as unknown as DOMRectList;
+Range.prototype.getBoundingClientRect ??= () => new DOMRect();
+
 describe("details insertion", () => {
   it("inserts an editable, semantically stable block into an empty paragraph", () => {
     const state = runCommand(
@@ -438,6 +441,41 @@ Outside`,
     ).toBe(true);
     expect(state.doc.toJSON()).toEqual(inserted);
     expect(state.selection.toJSON()).toEqual(insertedSelection);
+  });
+
+  it("undoes and redoes insertion from the editor toolbar", async () => {
+    render(<GFMarkdownEditor context={context} value="" />);
+    const editor = document.querySelector(".gfmd-editor-surface") as HTMLElement;
+
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Insert details" })),
+    );
+    await waitFor(() => {
+      expect(document.querySelector("details")).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "Undo" }).getAttribute(
+          "aria-disabled",
+        ),
+      ).not.toBe("true");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => {
+      expect(document.querySelector("details")).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Redo" }).getAttribute(
+          "aria-disabled",
+        ),
+      ).not.toBe("true");
+    });
+    expect(document.activeElement).toBe(editor);
+
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await waitFor(() => {
+      expect(document.querySelector("details")).toBeTruthy();
+      expect(screen.getByText("Details").tagName).toBe("SUMMARY");
+    });
+    expect(document.activeElement).toBe(editor);
   });
 
   it("replaces inserted details from controlled values", async () => {
