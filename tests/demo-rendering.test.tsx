@@ -1,17 +1,40 @@
 /// <reference types="vite/client" />
 
-import { render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { act } from "react";
 import { describe, expect, it } from "vitest";
-import { formatMarkdownPreview, initialMarkdown } from "../demo/main";
+import { App, initialMarkdown } from "../demo/main";
 import { GFMarkdownEditor } from "../src";
 import githubRenderedHtml from "./fixtures/demo.github.html?raw";
 
 const context = { owner: "cschleiden", repo: "react-gfmd" };
 
 describe("demo rendering", () => {
-  it("shows serialized trailing spaces as whitespace instead of entities", () => {
-    expect(formatMarkdownPreview("df&#x20;")).toBe("df ");
+  it("keeps encoded whitespace editable as Markdown source", async () => {
+    render(<App />);
+    const textarea = screen.getByRole<HTMLTextAreaElement>("textbox", {
+      name: "Raw Markdown",
+    });
+
+    fireEvent.change(textarea, { target: { value: "typed&#x20;" } });
+    await act(async () => {});
+
+    expect(textarea.value).toBe("typed&#x20;");
+  });
+
+  it("edits raw Markdown through a textarea and updates the rich editor", async () => {
+    render(<App />);
+    const textarea = screen.getByRole<HTMLTextAreaElement>("textbox", {
+      name: "Raw Markdown",
+    });
+
+    fireEvent.change(textarea, { target: { value: "# Updated source" } });
+    await act(async () => {});
+
+    expect(textarea.value).toBe("# Updated source");
+    expect(document.querySelector(".gfmd-editor-surface")?.textContent).toBe(
+      "Updated source",
+    );
   });
 
   it("matches the semantic structure captured from GitHub's Markdown endpoint", async () => {
@@ -25,7 +48,6 @@ describe("demo rendering", () => {
         value={initialMarkdown}
       />,
     );
-    await act(async () => {});
     const editor = document.querySelector<HTMLElement>(".gfmd-editor-surface");
     expect(editor).not.toBeNull();
 
@@ -76,12 +98,13 @@ function renderingFingerprint(root: HTMLElement) {
       open: (details as HTMLDetailsElement).open,
       summary: text(details.querySelector(":scope > summary")),
     })),
-    images: elements<HTMLImageElement>(comparable, "img:not(.emoji)").map(
-      (image) => [
-        image.getAttribute("alt"),
-        image.getAttribute("data-canonical-src") ?? image.getAttribute("src"),
-      ],
-    ),
+    images: elements<HTMLImageElement>(
+      comparable,
+      "img:not(.emoji):not(.ProseMirror-separator)",
+    ).map((image) => [
+      image.getAttribute("alt"),
+      image.getAttribute("data-canonical-src") ?? image.getAttribute("src"),
+    ]),
     customEmoji: elements<HTMLImageElement>(comparable, "img.emoji").map(
       (image) => image.getAttribute("alt"),
     ),

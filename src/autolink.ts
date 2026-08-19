@@ -5,6 +5,7 @@ import { gfmSchema } from "./schema";
 
 const autolinkPluginKey = new PluginKey("gfmd-autolink");
 const nonWhitespacePattern = /\S+/g;
+const autolinkCandidatePattern = /https?:\/\/|www\.|@/i;
 
 interface AutolinkRange {
   from: number;
@@ -84,6 +85,15 @@ function addAutolinks(
 ) {
   textblock.descendants((node, position) => {
     if (!node.isText || !node.text) return;
+    if (
+      node.marks.some(
+        (mark) =>
+          mark.type === gfmSchema.marks.link ||
+          mark.type === gfmSchema.marks.code,
+      )
+    ) {
+      return;
+    }
     const nodeFrom = start + position;
     const ranges = autolinkRanges(node.text, (tokenFrom, tokenTo) =>
       changedRanges.some((changed) =>
@@ -118,6 +128,7 @@ export function autolinkRanges(
   for (const match of text.matchAll(nonWhitespacePattern)) {
     if (match.index === undefined) continue;
     const token = match[0];
+    if (!autolinkCandidatePattern.test(token)) continue;
     if (!includeToken(match.index, match.index + token.length)) continue;
     const parsed = parseWithRemark(token);
     if (parsed.textContent !== token || parsed.childCount !== 1) continue;

@@ -155,10 +155,6 @@ Emoji shortcodes remain source text: :+1: :shipit: :tada: :rocket: :octocat:
 [Jump back to the round-trip anchor](#round-trip)
 `;
 
-export function formatMarkdownPreview(markdown: string) {
-  return markdown.replaceAll("&#x20;", " ");
-}
-
 export function App() {
   const [markdown, setMarkdown] = React.useState(initialMarkdown);
 
@@ -174,12 +170,19 @@ export function App() {
           <GFMarkdownEditor
             context={{ owner: "cschleiden", repo: "react-gfmd" }}
             onChange={setMarkdown}
+            onChangeDebounceMs={150}
             value={markdown}
           />
         </section>
         <section className="demo-pane">
-          <h2>Raw Markdown</h2>
-          <pre className="demo-markdown">{formatMarkdownPreview(markdown)}</pre>
+          <h2 id="raw-markdown-heading">Raw Markdown</h2>
+          <textarea
+            aria-labelledby="raw-markdown-heading"
+            className="demo-markdown"
+            onChange={(event) => setMarkdown(event.currentTarget.value)}
+            spellCheck={false}
+            value={markdown}
+          />
         </section>
       </div>
     </main>

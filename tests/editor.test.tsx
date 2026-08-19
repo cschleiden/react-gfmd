@@ -140,6 +140,112 @@ describe("GFMarkdownEditor", () => {
     expect(screen.queryByLabelText("Markdown formatting")).toBeNull();
   });
 
+  it("coalesces Markdown serialization when onChange is debounced", async () => {
+    vi.useFakeTimers();
+    try {
+      const onChange = vi.fn();
+      render(
+        <GFMarkdownEditor
+          context={context}
+          onChange={onChange}
+          onChangeDebounceMs={100}
+          value="- [ ] Task item"
+        />,
+      );
+
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Mark task complete" }),
+      );
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Mark task incomplete" }),
+      );
+      expect(onChange).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenLastCalledWith(
+        "- [ ] Task item",
+        expect.anything(),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("discards a pending debounced change when controlled content replaces it", async () => {
+    vi.useFakeTimers();
+    try {
+      const onChange = vi.fn();
+      const rendered = render(
+        <GFMarkdownEditor
+          context={context}
+          onChange={onChange}
+          onChangeDebounceMs={100}
+          value="- [ ] Task item"
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Mark task complete" }),
+      );
+
+      rendered.rerender(
+        <GFMarkdownEditor
+          context={context}
+          onChange={onChange}
+          onChangeDebounceMs={100}
+          value="Replacement"
+        />,
+      );
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(onChange).not.toHaveBeenCalled();
+      expect(screen.getByText("Replacement")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("preserves a pending debounced change when context changes", async () => {
+    vi.useFakeTimers();
+    try {
+      const onChange = vi.fn();
+      const rendered = render(
+        <GFMarkdownEditor
+          context={context}
+          onChange={onChange}
+          onChangeDebounceMs={100}
+          value="- [ ] Task item"
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Mark task complete" }),
+      );
+
+      rendered.rerender(
+        <GFMarkdownEditor
+          context={{ owner: context.owner, repo: "another-repo" }}
+          onChange={onChange}
+          onChangeDebounceMs={100}
+          value="- [ ] Task item"
+        />,
+      );
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenLastCalledWith(
+        "- [x] Task item",
+        expect.anything(),
+      );
+      expect(
+        screen.getByRole("checkbox", { name: "Mark task incomplete" }),
+      ).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(onChange).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps keyboard history available when the toolbar is hidden", async () => {
     render(
       <GFMarkdownEditor
@@ -1768,6 +1874,21 @@ b](#old)`,
         href: "https://second.example",
       },
     ]);
+  });
+
+  it("rejects non-link tokens before evaluating changed ranges", () => {
+    const plainText = Array.from({ length: 1_000 }, () => "plain").join(" ");
+    const includeToken = vi.fn(() => true);
+    const url = "https://example.com";
+
+    expect(autolinkRanges(`${plainText} ${url}`, includeToken)).toEqual([
+      {
+        from: plainText.length + 1,
+        to: plainText.length + 1 + url.length,
+        href: url,
+      },
+    ]);
+    expect(includeToken).toHaveBeenCalledTimes(1);
   });
 
   it("preserves overlapping strong marks when auto-linking", () => {

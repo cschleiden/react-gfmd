@@ -59,40 +59,96 @@ export function GFMarkdownEditor(props: GFMarkdownEditorProps) {
   latestProps.current = props;
   const lastAppliedValueRef = React.useRef(props.value);
   const lastAppliedContextRef = React.useRef(contextKey(props.context));
-
+  const pendingChangeRef = React.useRef<PendingChange | null>(null);
   const [editorState, setEditorState] = React.useState<EditorState>(() =>
     createGFMarkdownState(props),
   );
   const [editorView, setEditorView] = React.useState<EditorView | null>(null);
   const nodeViews = React.useMemo(() => createNodeViews(latestProps), []);
 
-  React.useEffect(() => {
-    const nextContextKey = contextKey(props.context);
-    if (
-      props.value === lastAppliedValueRef.current &&
-      nextContextKey === lastAppliedContextRef.current
-    ) {
-      return;
-    }
-    lastAppliedValueRef.current = props.value;
-    lastAppliedContextRef.current = nextContextKey;
-    setEditorState(createGFMarkdownState(latestProps.current));
-  }, [props.context.owner, props.context.repo, props.value]);
+  const clearPendingChange = React.useCallback(() => {
+    const pending = pendingChangeRef.current;
+    if (!pending) return;
+    globalThis.clearTimeout(pending.timer);
+    pendingChangeRef.current = null;
+  }, []);
 
-  const dispatchTransaction = React.useCallback((transaction: Transaction) => {
-    setEditorState((state) => {
-      const nextState = state.apply(transaction);
-      if (transaction.docChanged) {
-        lastAppliedValueRef.current = serializeMarkdown(nextState.doc);
-        latestProps.current.onChange?.(
-          lastAppliedValueRef.current,
-          nextState.doc,
-        );
+  const emitChange = React.useCallback((): string | null => {
+    const pending = pendingChangeRef.current;
+    if (!pending) return null;
+    globalThis.clearTimeout(pending.timer);
+    pendingChangeRef.current = null;
+
+    const onChange = latestProps.current.onChange;
+    if (!onChange) return null;
+    const markdown = serializeMarkdown(pending.doc);
+    lastAppliedValueRef.current = markdown;
+    onChange(markdown, pending.doc);
+    return markdown;
+  }, []);
+
+  const scheduleChange = React.useCallback(
+    (doc: ProseMirrorNode) => {
+      if (!latestProps.current.onChange) return;
+      clearPendingChange();
+
+      const delay = Math.max(0, latestProps.current.onChangeDebounceMs ?? 0);
+      if (delay === 0) {
+        pendingChangeRef.current = { doc, timer: 0 };
+        emitChange();
+        return;
       }
 
-      return nextState;
+      const timer = globalThis.setTimeout(emitChange, delay);
+      pendingChangeRef.current = { doc, timer };
+    },
+    [clearPendingChange, emitChange],
+  );
+
+  React.useEffect(() => {
+    const nextContextKey = contextKey(props.context);
+    const valueChanged = props.value !== lastAppliedValueRef.current;
+    const contextChanged = nextContextKey !== lastAppliedContextRef.current;
+    if (!valueChanged && !contextChanged) return;
+
+    let nextValue = props.value;
+    if (!valueChanged && contextChanged && pendingChangeRef.current) {
+      const pendingDoc = pendingChangeRef.current.doc;
+      nextValue = emitChange() ?? serializeMarkdown(pendingDoc);
+    } else {
+      clearPendingChange();
+    }
+    lastAppliedValueRef.current = nextValue;
+    lastAppliedContextRef.current = nextContextKey;
+    const nextState = createGFMarkdownState({
+      ...latestProps.current,
+      value: nextValue,
     });
-  }, []);
+    setEditorState(nextState);
+  }, [
+    clearPendingChange,
+    emitChange,
+    props.context.owner,
+    props.context.repo,
+    props.value,
+  ]);
+
+  React.useEffect(() => {
+    return () => {
+      emitChange();
+    };
+  }, [emitChange]);
+
+  const dispatchTransaction = React.useCallback(
+    (transaction: Transaction) => {
+      setEditorState((state) => {
+        const nextState = state.apply(transaction);
+        if (transaction.docChanged) scheduleChange(nextState.doc);
+        return nextState;
+      });
+    },
+    [scheduleChange],
+  );
 
   return (
     <div className={["gfmd-editor", props.className].filter(Boolean).join(" ")}>
@@ -113,10 +169,18 @@ export function GFMarkdownEditor(props: GFMarkdownEditorProps) {
         state={editorState}
       >
         <ProseMirrorDoc />
-        <EditorViewObserver onViewChange={setEditorView} />
+        <EditorViewObserver
+          onBlur={emitChange}
+          onViewChange={setEditorView}
+        />
       </ProseMirror>
     </div>
   );
+}
+
+interface PendingChange {
+  doc: ProseMirrorNode;
+  timer: ReturnType<typeof globalThis.setTimeout>;
 }
 
 function contextKey(context: GFMarkdownEditorProps["context"]) {
@@ -124,16 +188,25 @@ function contextKey(context: GFMarkdownEditorProps["context"]) {
 }
 
 function EditorViewObserver({
+  onBlur,
   onViewChange,
 }: {
+  onBlur: () => string | null;
   onViewChange: React.Dispatch<React.SetStateAction<EditorView | null>>;
 }) {
   useEditorEffect(
     (view) => {
       onViewChange(view);
-      return () => onViewChange(null);
+      if (!view) return undefined;
+
+      const handleBlur = () => onBlur();
+      view.dom.addEventListener("blur", handleBlur, true);
+      return () => {
+        view.dom.removeEventListener("blur", handleBlur, true);
+        onViewChange(null);
+      };
     },
-    [onViewChange],
+    [onBlur, onViewChange],
   );
 
   return null;
