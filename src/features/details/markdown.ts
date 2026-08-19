@@ -17,6 +17,7 @@ import {
   type HandlerState,
 } from "../../mdast-utils";
 import { gfmSchema } from "../../schema";
+import { defaultDetailsSummary } from "./model";
 
 declare module "mdast" {
   interface Details extends MdastParent {
@@ -36,8 +37,6 @@ declare module "mdast" {
     detailsSummary: DetailsSummary;
   }
 }
-
-const defaultDetailsSummary = "Details";
 
 type SummaryParser = (value: string) => PhrasingContent[];
 type MarkdownStringifier = (tree: Root) => string;
@@ -141,9 +140,14 @@ function groupDetailsChildren(
 function canContainBlockDetails(
   parent: MdastParent | Root,
 ): parent is (MdastParent | Root) & { children: RootContent[] } {
-  return ["blockquote", "details", "footnoteDefinition", "listItem", "root"].includes(
-    parent.type,
-  );
+  return [
+    "blockquote",
+    "details",
+    "footnoteDefinition",
+    "githubAlert",
+    "listItem",
+    "root",
+  ].includes(parent.type);
 }
 
 function groupDetails(

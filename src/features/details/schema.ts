@@ -5,7 +5,7 @@ export const detailsNodeSpec: NodeSpec = {
     open: { default: false },
     implicitSummary: { default: false },
   },
-  content: "details_summary block*",
+  content: "details_summary block+",
   group: "block",
   defining: true,
   parseDOM: [
@@ -13,7 +13,9 @@ export const detailsNodeSpec: NodeSpec = {
       tag: "details",
       getAttrs: (node) => ({
         open: node instanceof HTMLDetailsElement ? node.open : false,
-        implicitSummary: false,
+        implicitSummary:
+          node instanceof HTMLElement &&
+          node.getAttribute("data-gfmd-implicit-summary") === "true",
       }),
     },
   ],
@@ -21,6 +23,7 @@ export const detailsNodeSpec: NodeSpec = {
     "details",
     {
       "data-gfmd-details": "",
+      "data-gfmd-implicit-summary": String(node.attrs.implicitSummary),
       ...(node.attrs.open ? { open: "open" } : {}),
     },
     0,

@@ -28,6 +28,7 @@ import { EditorState, type Command } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import * as React from "react";
 import { AlertToolbar } from "./features/alerts/toolbar";
+import { DetailsToolbar } from "./features/details";
 import { LinkEditor } from "./link-editor";
 import {
   changeListIndent,
@@ -223,6 +224,11 @@ export function GFMarkdownToolbar({
           view={view}
         />
         <AlertToolbar
+          onCommand={(command) => runCommand(view, command)}
+          state={state}
+          view={view}
+        />
+        <DetailsToolbar
           onCommand={(command) => runCommand(view, command)}
           state={state}
           view={view}
