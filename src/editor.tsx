@@ -38,6 +38,7 @@ import { parseMarkdown, serializeMarkdown } from "./markdown";
 import { gfmSchema } from "./schema";
 import { createLinkInteractionPlugin } from "./link";
 import { GFMarkdownToolbar } from "./toolbar";
+import { ContextualToolbar } from "./contextual-toolbar";
 
 export type {
   CreateGFMarkdownStateOptions,
@@ -159,10 +160,16 @@ export function GFMarkdownEditor(props: GFMarkdownEditorProps) {
           view={editorView}
         />
       ) : null}
+      {props.contextualToolbar !== false && editorView ? (
+        <ContextualToolbar state={editorState} view={editorView} />
+      ) : null}
       <ProseMirror
         attributes={{
           class: "gfmd-editor-surface",
           "data-placeholder": props.placeholder ?? "",
+          ...(props.contextualToolbar === false
+            ? {}
+            : { "aria-keyshortcuts": "Alt+F10" }),
         }}
         dispatchTransaction={dispatchTransaction}
         nodeViews={nodeViews}

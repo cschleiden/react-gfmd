@@ -22,8 +22,9 @@ export function AlertToolbar({
       <Menu.Trigger
         aria-label="Alert type"
         className="gfmd-toolbar-button"
+        data-active={activeKind ? "" : undefined}
         disabled={!setAlert("note")(state, undefined, view)}
-        title="Alert"
+        title={activeKind ? `Alert: ${alertLabel(activeKind)}` : "Alert"}
         type="button"
       >
         <CircleAlert className="gfmd-toolbar-icon" size={16} />

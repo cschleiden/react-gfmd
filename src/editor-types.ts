@@ -10,6 +10,7 @@ export interface GFMarkdownEditorProps {
   className?: string;
   toolbar?: boolean;
   toolbarClassName?: string;
+  contextualToolbar?: boolean;
 }
 
 export interface CreateGFMarkdownStateOptions {
