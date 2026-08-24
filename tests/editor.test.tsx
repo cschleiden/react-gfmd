@@ -156,7 +156,7 @@ describe("GFMarkdownEditor", () => {
     expect(testView.view.focus).toHaveBeenCalled();
   });
 
-  it("puts enabled structural and GitHub actions in the contextual menu", async () => {
+  it("keeps inline actions visible and groups overflow actions concisely", async () => {
     let state = createGFMarkdownState({ context, value: "Selected text" });
     state = state.apply(
       state.tr.setSelection(TextSelection.create(state.doc, 1, 9)),
@@ -167,14 +167,17 @@ describe("GFMarkdownEditor", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Selection formatting")).toBeTruthy(),
     );
+    expect(screen.getByTitle("Keyboard input")).toBeTruthy();
+    expect(screen.getByTitle("Subscript")).toBeTruthy();
+    expect(screen.getByTitle("Superscript")).toBeTruthy();
+    expect(screen.getByTitle("Clear formatting")).toBeTruthy();
     fireEvent.click(screen.getByTitle("More formatting"));
 
-    expect(screen.getByRole("menuitem", { name: "Keyboard input" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "Heading 1" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "Alert: Note" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "New footnote" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "Insert details" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "Bulleted list" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Text style" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "GitHub alert" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Footnotes" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Blocks" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Keyboard input" })).toBeNull();
   });
 
   it("changes the active GitHub alert type from the contextual menu", async () => {
@@ -195,6 +198,7 @@ describe("GFMarkdownEditor", () => {
       expect(screen.getByLabelText("Selection formatting")).toBeTruthy(),
     );
     fireEvent.click(screen.getByTitle("More formatting"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "GitHub alert" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Alert: Warning" }));
 
     await waitFor(() =>
@@ -246,7 +250,7 @@ describe("GFMarkdownEditor", () => {
     );
     fireEvent.click(screen.getByTitle("More formatting"));
 
-    expect(screen.queryByRole("menuitem", { name: "Heading 1" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Text style" })).toBeNull();
   });
 
   it("can hide the formatting toolbar", () => {

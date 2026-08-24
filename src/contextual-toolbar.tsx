@@ -3,6 +3,7 @@ import { Toolbar } from "@base-ui/react/toolbar";
 import {
   BrushCleaning,
   Check,
+  ChevronRight,
   CircleAlert,
   FileText,
   Heading,
@@ -42,13 +43,6 @@ import {
 } from "./toolbar";
 
 const ownerAttribute = "data-gfmd-contextual-owner";
-const directMarkIds = new Set(["bold", "italic", "strike", "code"]);
-const directMarkActions = markActions.filter((action) =>
-  directMarkIds.has(action.id),
-);
-const overflowMarkActions = markActions.filter(
-  (action) => !directMarkIds.has(action.id),
-);
 
 interface ContextualToolbarProps {
   state: EditorState;
@@ -290,7 +284,7 @@ export function ContextualToolbar({
           aria-label="Common inline formatting"
           className="gfmd-toolbar-group"
         >
-          {directMarkActions.map((action) => (
+          {markActions.map((action) => (
             <ToolbarActionButton
               action={action}
               key={action.id}
@@ -332,9 +326,6 @@ function ContextualMoreMenu({
   state: EditorState;
   view: EditorView;
 }) {
-  const overflowActions = overflowMarkActions.filter((action) =>
-    action.command(state, undefined, view),
-  );
   const enabledBlockActions = blockActions.filter((action) =>
     action.command(state, undefined, view),
   );
@@ -363,77 +354,53 @@ function ContextualMoreMenu({
             className="gfmd-contextual-menu"
             {...{ [ownerAttribute]: ownerId }}
           >
-            <ContextualMenuGroup label="Inline">
-              {overflowActions.map((action) => (
-                <ContextualActionItem
-                  action={action}
-                  key={action.id}
-                  view={view}
-                />
-              ))}
-            </ContextualMenuGroup>
-            <Menu.Separator className="gfmd-contextual-menu-separator" />
-            <ContextualMenuGroup label="Text style">
-              {textStyleActions.map((action) => (
-                <ContextualActionItem
-                  action={action}
-                  key={action.id}
-                  view={view}
-                />
-              ))}
-            </ContextualMenuGroup>
+            {textStyleActions.length ? (
+              <ContextualSubmenu
+                actions={textStyleActions}
+                icon={<FileText size={16} />}
+                label="Text style"
+                ownerId={ownerId}
+                view={view}
+              />
+            ) : null}
             {alertActions.length ? (
-              <>
-                <Menu.Separator className="gfmd-contextual-menu-separator" />
-                <ContextualMenuGroup label="GitHub alert">
-                  {alertActions.map((action) => (
-                    <ContextualActionItem
-                      action={action}
-                      key={action.id}
-                      view={view}
-                    />
-                  ))}
-                </ContextualMenuGroup>
-              </>
+              <ContextualSubmenu
+                actions={alertActions}
+                icon={<CircleAlert size={16} />}
+                label="GitHub alert"
+                ownerId={ownerId}
+                view={view}
+              />
             ) : null}
             {footnoteActions.length ? (
-              <>
-                <Menu.Separator className="gfmd-contextual-menu-separator" />
-                <ContextualMenuGroup label="Footnotes">
-                  {footnoteActions.map((action) => (
-                    <ContextualActionItem
-                      action={action}
-                      key={action.id}
-                      view={view}
-                    />
-                  ))}
-                </ContextualMenuGroup>
-              </>
+              <ContextualSubmenu
+                actions={footnoteActions}
+                icon={<FootnoteIcon />}
+                label="Footnotes"
+                ownerId={ownerId}
+                view={view}
+              />
             ) : null}
             {detailsEnabled || enabledBlockActions.length ? (
-              <>
-                <Menu.Separator className="gfmd-contextual-menu-separator" />
-                <ContextualMenuGroup label="Blocks">
-                  {detailsEnabled ? (
-                    <ContextualActionItem
-                      action={{
-                        id: "details",
-                        icon: <ListCollapse size={16} />,
-                        title: "Insert details",
-                        command: insertDetails,
-                      }}
-                      view={view}
-                    />
-                  ) : null}
-                  {enabledBlockActions.map((action) => (
-                    <ContextualActionItem
-                      action={action}
-                      key={action.id}
-                      view={view}
-                    />
-                  ))}
-                </ContextualMenuGroup>
-              </>
+              <ContextualSubmenu
+                actions={[
+                  ...(detailsEnabled
+                    ? [
+                        {
+                          id: "details",
+                          icon: <ListCollapse size={16} />,
+                          title: "Insert details",
+                          command: insertDetails,
+                        },
+                      ]
+                    : []),
+                  ...enabledBlockActions,
+                ]}
+                icon={<ListCollapse size={16} />}
+                label="Blocks"
+                ownerId={ownerId}
+                view={view}
+              />
             ) : null}
           </Menu.Popup>
         </Menu.Positioner>
@@ -442,18 +409,49 @@ function ContextualMoreMenu({
   );
 }
 
-function ContextualMenuGroup({
-  children,
+function ContextualSubmenu({
+  actions,
+  icon,
   label,
+  ownerId,
+  view,
 }: {
-  children: React.ReactNode;
+  actions: ToolbarAction[];
+  icon: React.ReactNode;
   label: string;
+  ownerId: string;
+  view: EditorView;
 }) {
+  const active = actions.some((action) => action.active?.(view.state));
   return (
-    <div aria-label={label} role="group">
-      <div className="gfmd-contextual-menu-label">{label}</div>
-      {children}
-    </div>
+    <Menu.SubmenuRoot>
+      <Menu.SubmenuTrigger
+        className="gfmd-contextual-menu-item"
+        data-active={active ? "" : undefined}
+        openOnHover
+      >
+        <span className="gfmd-contextual-menu-icon">{icon}</span>
+        <span>{label}</span>
+        <ChevronRight aria-hidden size={14} />
+      </Menu.SubmenuTrigger>
+      <Menu.Portal>
+        <Menu.Positioner align="start" side="right" sideOffset={4}>
+          <Menu.Popup
+            aria-label={`${label} options`}
+            className="gfmd-contextual-menu gfmd-contextual-submenu"
+            {...{ [ownerAttribute]: ownerId }}
+          >
+            {actions.map((action) => (
+              <ContextualActionItem
+                action={action}
+                key={action.id}
+                view={view}
+              />
+            ))}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.SubmenuRoot>
   );
 }
 
