@@ -17,6 +17,7 @@ import {
   serializeMarkdown,
 } from "../src";
 import { GFMarkdownToolbar } from "../src/toolbar";
+import { ContextualToolbar } from "../src/contextual-toolbar";
 import {
   applyLinkEdit,
   linkSelection,
@@ -57,6 +58,11 @@ describe("GFMarkdownEditor", () => {
     expect(screen.getByTitle("Bold")).toBeTruthy();
     expect(screen.getByTitle("Keyboard input")).toBeTruthy();
     expect(screen.getByTitle("Code block")).toBeTruthy();
+    expect(
+      document
+        .querySelector(".gfmd-editor-surface")
+        ?.getAttribute("aria-keyshortcuts"),
+    ).toBe("Alt+F10");
   });
 
   it("keeps undo and redo controls reactive across edits and shortcuts", async () => {
@@ -132,12 +138,140 @@ describe("GFMarkdownEditor", () => {
     expect(serializeMarkdown(state.doc)).toBe("Press Ctrl");
   });
 
+  it("shows contextual inline actions for a text selection", async () => {
+    let state = createGFMarkdownState({ context, value: "Hello" });
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, 1, 6)),
+    );
+    const testView = createContextualTestView(state);
+
+    render(<ContextualToolbar state={state} view={testView.view} />);
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Selection formatting")).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTitle("Bold"));
+
+    expect(serializeMarkdown(testView.state().doc)).toBe("**Hello**");
+    expect(testView.view.focus).toHaveBeenCalled();
+  });
+
+  it("puts enabled structural and GitHub actions in the contextual menu", async () => {
+    let state = createGFMarkdownState({ context, value: "Selected text" });
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, 1, 9)),
+    );
+    const testView = createContextualTestView(state);
+
+    render(<ContextualToolbar state={state} view={testView.view} />);
+    await waitFor(() =>
+      expect(screen.getByLabelText("Selection formatting")).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTitle("More formatting"));
+
+    expect(screen.getByRole("menuitem", { name: "Keyboard input" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Heading 1" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Alert: Note" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "New footnote" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Insert details" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Bulleted list" })).toBeTruthy();
+  });
+
+  it("changes the active GitHub alert type from the contextual menu", async () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "> [!NOTE]\n> Alert body",
+    });
+    const from = findTextPosition(state, "Alert body");
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, from, from + "Alert body".length),
+      ),
+    );
+    const testView = createContextualTestView(state);
+
+    render(<ContextualToolbar state={state} view={testView.view} />);
+    await waitFor(() =>
+      expect(screen.getByLabelText("Selection formatting")).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTitle("More formatting"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Alert: Warning" }));
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText("More formatting options")).toBeNull(),
+    );
+    expect(serializeMarkdown(testView.state().doc)).toContain("[!WARNING]");
+  });
+
+  it("does not render the contextual toolbar for a collapsed selection", () => {
+    const state = createGFMarkdownState({ context, value: "Hello" });
+    const testView = createContextualTestView(state);
+
+    render(<ContextualToolbar state={state} view={testView.view} />);
+
+    expect(screen.queryByLabelText("Selection formatting")).toBeNull();
+  });
+
+  it("moves keyboard focus into the contextual toolbar with Alt+F10", async () => {
+    let state = createGFMarkdownState({ context, value: "Hello" });
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, 1, 6)),
+    );
+    const testView = createContextualTestView(state, false);
+
+    render(<ContextualToolbar state={state} view={testView.view} />);
+    expect(screen.queryByLabelText("Selection formatting")).toBeNull();
+
+    fireEvent.keyDown(testView.view.dom, { altKey: true, key: "F10" });
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTitle("Bold")));
+  });
+
+  it("omits text styles that are invalid for the selected textblock", async () => {
+    let state = createGFMarkdownState({
+      context,
+      value: "<details>\n<summary>Summary</summary>\n\nBody\n\n</details>",
+    });
+    const from = findTextPosition(state, "Summary");
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, from, from + "Summary".length),
+      ),
+    );
+    const testView = createContextualTestView(state);
+
+    render(<ContextualToolbar state={state} view={testView.view} />);
+    await waitFor(() =>
+      expect(screen.getByLabelText("Selection formatting")).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTitle("More formatting"));
+
+    expect(screen.queryByRole("menuitem", { name: "Heading 1" })).toBeNull();
+  });
+
   it("can hide the formatting toolbar", () => {
     render(
       <GFMarkdownEditor context={context} toolbar={false} value="Hello" />,
     );
 
     expect(screen.queryByLabelText("Markdown formatting")).toBeNull();
+  });
+
+  it("can disable the contextual toolbar independently", () => {
+    render(
+      <GFMarkdownEditor
+        context={context}
+        contextualToolbar={false}
+        value="Hello"
+      />,
+    );
+
+    expect(screen.getByLabelText("Markdown formatting")).toBeTruthy();
+    expect(
+      document
+        .querySelector(".gfmd-editor-surface")
+        ?.getAttribute("aria-keyshortcuts"),
+    ).toBeNull();
   });
 
   it("coalesces Markdown serialization when onChange is debounced", async () => {
@@ -2486,4 +2620,31 @@ function findNodePosition(state: EditorState, typeName: string) {
 function linkIsActive(state: EditorState) {
   const selection = linkSelection(state);
   return selection !== null && selection.kind !== "new";
+}
+
+function createContextualTestView(initialState: EditorState, focused = true) {
+  let state = initialState;
+  const view = {
+    coordsAtPos(position: number) {
+      return {
+        bottom: 120,
+        left: 100 + position * 4,
+        right: 101 + position * 4,
+        top: 100,
+      };
+    },
+    dispatch(transaction: Transaction) {
+      state = state.apply(transaction);
+    },
+    dom: document.createElement("div"),
+    focus: vi.fn(),
+    get state() {
+      return state;
+    },
+    hasFocus: () => focused,
+  } as unknown as EditorView;
+  return {
+    state: () => state,
+    view,
+  };
 }

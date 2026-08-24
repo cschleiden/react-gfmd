@@ -48,7 +48,7 @@ interface GFMarkdownToolbarProps {
   view: EditorView;
 }
 
-interface ToolbarAction {
+export interface ToolbarAction {
   id: string;
   icon: React.ReactNode;
   title: string;
@@ -56,7 +56,7 @@ interface ToolbarAction {
   active?: (state: EditorState) => boolean;
 }
 
-const markActions: ToolbarAction[] = [
+export const markActions: ToolbarAction[] = [
   markAction(
     "bold",
     <Bold className="gfmd-toolbar-icon" size={16} />,
@@ -108,7 +108,7 @@ const markActions: ToolbarAction[] = [
   },
 ];
 
-const blockActions: ToolbarAction[] = [
+export const blockActions: ToolbarAction[] = [
   {
     id: "quote",
     icon: <Quote className="gfmd-toolbar-icon" size={16} />,
@@ -219,17 +219,17 @@ export function GFMarkdownToolbar({
       >
         <HeadingLevelSelect state={state} view={view} />
         <FootnoteToolbar
-          onCommand={(command) => runCommand(view, command)}
+          onCommand={(command) => runToolbarCommand(view, command)}
           state={state}
           view={view}
         />
         <AlertToolbar
-          onCommand={(command) => runCommand(view, command)}
+          onCommand={(command) => runToolbarCommand(view, command)}
           state={state}
           view={view}
         />
         <DetailsToolbar
-          onCommand={(command) => runCommand(view, command)}
+          onCommand={(command) => runToolbarCommand(view, command)}
           state={state}
           view={view}
         />
@@ -306,49 +306,68 @@ function HeadingLevelSelect({
       id: "paragraph",
       label: "Text",
       previewClassName: "gfmd-text-option-preview gfmd-text-option-text",
-      onSelect: () => runCommand(view, setBlockType(gfmSchema.nodes.paragraph)),
+      onSelect: () =>
+        runToolbarCommand(view, setBlockType(gfmSchema.nodes.paragraph)),
     },
     {
       id: "h1",
       label: "Heading 1",
       previewClassName: "gfmd-text-option-preview gfmd-text-option-h1",
       onSelect: () =>
-        runCommand(view, setBlockType(gfmSchema.nodes.heading, { level: 1 })),
+        runToolbarCommand(
+          view,
+          setBlockType(gfmSchema.nodes.heading, { level: 1 }),
+        ),
     },
     {
       id: "h2",
       label: "Heading 2",
       previewClassName: "gfmd-text-option-preview gfmd-text-option-h2",
       onSelect: () =>
-        runCommand(view, setBlockType(gfmSchema.nodes.heading, { level: 2 })),
+        runToolbarCommand(
+          view,
+          setBlockType(gfmSchema.nodes.heading, { level: 2 }),
+        ),
     },
     {
       id: "h3",
       label: "Heading 3",
       previewClassName: "gfmd-text-option-preview gfmd-text-option-h3",
       onSelect: () =>
-        runCommand(view, setBlockType(gfmSchema.nodes.heading, { level: 3 })),
+        runToolbarCommand(
+          view,
+          setBlockType(gfmSchema.nodes.heading, { level: 3 }),
+        ),
     },
     {
       id: "h4",
       label: "Heading 4",
       previewClassName: "gfmd-text-option-preview gfmd-text-option-h4",
       onSelect: () =>
-        runCommand(view, setBlockType(gfmSchema.nodes.heading, { level: 4 })),
+        runToolbarCommand(
+          view,
+          setBlockType(gfmSchema.nodes.heading, { level: 4 }),
+        ),
     },
     {
       id: "h5",
       label: "Heading 5",
       previewClassName: "gfmd-text-option-preview gfmd-text-option-h5",
       onSelect: () =>
-        runCommand(view, setBlockType(gfmSchema.nodes.heading, { level: 5 })),
+        runToolbarCommand(
+          view,
+          setBlockType(gfmSchema.nodes.heading, { level: 5 }),
+        ),
     },
     {
       id: "h6",
       label: "Heading 6",
       previewClassName: "gfmd-text-option-preview gfmd-text-option-h6",
       onSelect: () =>
-        runCommand(view, setBlockType(gfmSchema.nodes.heading, { level: 6 })),
+        runToolbarCommand(
+          view,
+          setBlockType(gfmSchema.nodes.heading, { level: 6 }),
+        ),
     },
   ];
 
@@ -390,7 +409,7 @@ function HeadingLevelSelect({
   );
 }
 
-function ToolbarActionButton({
+export function ToolbarActionButton({
   action,
   state,
   view,
@@ -409,7 +428,7 @@ function ToolbarActionButton({
       className="gfmd-toolbar-button"
       data-active={active ? "" : undefined}
       disabled={disabled}
-      onClick={() => runCommand(view, action.command)}
+      onClick={() => runToolbarCommand(view, action.command)}
       onMouseDown={(event) => event.preventDefault()}
       title={action.title}
       type="button"
@@ -479,7 +498,7 @@ function hasInlineFormatting(state: EditorState) {
   return hasAnyMark;
 }
 
-function runCommand(view: EditorView, command: Command) {
+export function runToolbarCommand(view: EditorView, command: Command) {
   return runIsolatedCommand(view, command);
 }
 

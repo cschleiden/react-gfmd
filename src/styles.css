@@ -278,6 +278,99 @@
   background: var(--gfmd-border);
 }
 
+.gfmd-contextual-toolbar-positioner {
+  position: fixed;
+  z-index: 1100;
+  max-width: calc(100vw - 16px);
+}
+
+.gfmd-contextual-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border: 1px solid var(--gfmd-border);
+  border-radius: var(--gfmd-radius);
+  background: var(--gfmd-canvas);
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.24);
+  color: var(--gfmd-fg);
+}
+
+.gfmd-contextual-toolbar .gfmd-toolbar-button {
+  width: 30px;
+  height: 30px;
+}
+
+.gfmd-contextual-menu {
+  z-index: 1200;
+  width: min(260px, calc(100vw - 16px));
+  max-height: min(480px, calc(100vh - 24px));
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--gfmd-border);
+  border-radius: var(--gfmd-radius);
+  background: var(--gfmd-canvas);
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.24);
+  color: var(--gfmd-fg);
+  font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.gfmd-contextual-menu-label {
+  padding: 6px 8px 3px;
+  color: var(--gfmd-muted-fg);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.gfmd-contextual-menu-item {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  outline: none;
+}
+
+.gfmd-contextual-menu-item[data-highlighted],
+.gfmd-contextual-menu-item[data-active] {
+  background: var(--gfmd-subtle);
+}
+
+.gfmd-contextual-menu-item[data-active] {
+  color: var(--gfmd-accent);
+}
+
+.gfmd-contextual-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gfmd-contextual-menu-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.gfmd-contextual-menu-separator {
+  height: 1px;
+  margin: 4px;
+  background: var(--gfmd-border);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .gfmd-contextual-toolbar {
+    animation: gfmd-contextual-toolbar-in 120ms ease-out;
+  }
+}
+
+@keyframes gfmd-contextual-toolbar-in {
+  from {
+    opacity: 0.85;
+    transform: translateY(2px);
+  }
+}
+
 .gfmd-link-popover {
   z-index: 1000;
   width: min(360px, calc(100vw - 24px));

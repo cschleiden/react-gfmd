@@ -17,6 +17,9 @@ import { dispatchIsolatedTransaction } from "./history";
 interface LinkEditorProps {
   state: EditorState;
   view: EditorView;
+  contextualOwnerId?: string;
+  onOpenChange?: (open: boolean) => void;
+  resetKey?: number;
 }
 
 interface LinkDraft {
@@ -28,15 +31,33 @@ interface LinkDraft {
   error: string;
 }
 
-export function LinkEditor({ state, view }: LinkEditorProps) {
+export function LinkEditor({
+  contextualOwnerId,
+  onOpenChange,
+  resetKey,
+  state,
+  view,
+}: LinkEditorProps) {
   const [draft, setDraft] = React.useState<LinkDraft | null>(null);
   const urlInputRef = React.useRef<HTMLInputElement>(null);
+  const previousResetKey = React.useRef(resetKey);
   const currentTarget = linkSelection(state);
   const active = currentTarget?.kind !== "new" && currentTarget !== null;
 
   React.useEffect(() => {
-    if (draft && draft.sourceDoc !== state.doc) setDraft(null);
-  }, [draft, state.doc]);
+    if (draft && draft.sourceDoc !== state.doc) {
+      setDraft(null);
+      onOpenChange?.(false);
+    }
+  }, [draft, onOpenChange, state.doc]);
+
+  React.useEffect(() => {
+    if (previousResetKey.current === resetKey) return;
+    previousResetKey.current = resetKey;
+    if (!draft) return;
+    setDraft(null);
+    onOpenChange?.(false);
+  }, [draft, onOpenChange, resetKey]);
 
   function updateDraft(update: Partial<LinkDraft>) {
     setDraft((current) => current ? { ...current, ...update } : current);
@@ -49,6 +70,7 @@ export function LinkEditor({ state, view }: LinkEditorProps) {
       view.focus();
     }
     setDraft(null);
+    onOpenChange?.(false);
   }
 
   function handleOpenChange(open: boolean) {
@@ -59,6 +81,7 @@ export function LinkEditor({ state, view }: LinkEditorProps) {
 
     const target = linkSelection(view.state);
     if (!target) return;
+    onOpenChange?.(true);
     setDraft({
       target,
       sourceDoc: view.state.doc,
@@ -123,6 +146,7 @@ export function LinkEditor({ state, view }: LinkEditorProps) {
         <Popover.Positioner align="start" sideOffset={4}>
           <Popover.Popup
             className="gfmd-link-popover"
+            data-gfmd-contextual-owner={contextualOwnerId}
             finalFocus={false}
             initialFocus={urlInputRef}
           >
